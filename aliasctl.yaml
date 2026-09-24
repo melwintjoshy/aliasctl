@@ -1,0 +1,15 @@
+name: k8s
+
+variables:
+  NAMESPACE: app-prod
+
+aliases:
+  k: kubectl
+  kgp: "kubectl get pods -n ${NAMESPACE}"
+  kgs: "kubectl get services -n ${NAMESPACE}"
+  
+
+  d: docker
+  di: docker image ls
+
+  read: cat

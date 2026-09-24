@@ -1,0 +1,7 @@
+name: my-project
+
+variables:
+  ENVIRONMENT: development
+
+aliases:
+  hello: "echo hello"
