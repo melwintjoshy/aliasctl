@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/melwintjoshy/aliasctl/config"
 )
@@ -53,7 +56,7 @@ var placeholderPattern = regexp.MustCompile(`\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}`)
 
 // single pass so substituted values are never re-expanded; config wins over the process env
 func resolveVariables(value string, variables map[string]string) (string, error) {
-	var missing string
+	var missing []string
 
 	resolved := placeholderPattern.ReplaceAllStringFunc(value, func(match string) string {
 		name := placeholderPattern.FindStringSubmatch(match)[1]
@@ -66,15 +69,25 @@ func resolveVariables(value string, variables map[string]string) (string, error)
 			return variableValue
 		}
 
-		if missing == "" {
-			missing = name
+		if !slices.Contains(missing, name) {
+			missing = append(missing, name)
 		}
 
 		return match
 	})
 
-	if missing != "" {
-		return "", fmt.Errorf("undefined variable %q", missing)
+	if len(missing) == 1 {
+		return "", fmt.Errorf("undefined variable %q", missing[0])
+	}
+
+	if len(missing) > 1 {
+		quoted := make([]string, len(missing))
+
+		for i, name := range missing {
+			quoted[i] = strconv.Quote(name)
+		}
+
+		return "", fmt.Errorf("undefined variables %s", strings.Join(quoted, ", "))
 	}
 
 	return resolved, nil

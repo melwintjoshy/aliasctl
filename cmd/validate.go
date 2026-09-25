@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/melwintjoshy/aliasctl/config"
+	"github.com/melwintjoshy/aliasctl/app"
 )
 
 var validateCmd = &cobra.Command{
@@ -14,21 +14,12 @@ var validateCmd = &cobra.Command{
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		resolvedPath, err := config.ResolvePath(configPath)
-		if err != nil {
+		// resolving too, so undefined ${VAR} fails here instead of at shell or run time
+		if _, err := app.LoadEnvironment(configPath); err != nil {
 			return fmt.Errorf("configuration error: %w", err)
 		}
 
-		cfg, err := config.Load(resolvedPath)
-		if err != nil {
-			return fmt.Errorf("configuration error: %w", err)
-		}
-
-		if err := cfg.Validate(); err != nil {
-			return fmt.Errorf("configuration error: %w", err)
-		}
-
-		fmt.Println("Configuration is valid.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Configuration is valid.")
 
 		return nil
 	},

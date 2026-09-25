@@ -22,10 +22,6 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
-		if len(args) == 0 {
-			return fmt.Errorf("no command specified")
-		}
-
 		if err := shell.RunCommand(env, args); err != nil {
 			return fmt.Errorf("command failed: %w", err)
 		}

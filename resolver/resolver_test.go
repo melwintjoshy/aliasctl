@@ -277,3 +277,24 @@ func TestResolveDoesNotReexpandSubstitutedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveReportsAllUndefinedVariables(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+
+		Aliases: map[string]string{
+			"x": "echo ${ALIASCTL_TEST_A} ${ALIASCTL_TEST_B} ${ALIASCTL_TEST_A}",
+		},
+	}
+
+	_, err := Resolve(cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	expected := `invalid alias "x": undefined variables "ALIASCTL_TEST_A", "ALIASCTL_TEST_B"`
+
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
