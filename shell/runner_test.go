@@ -173,6 +173,82 @@ func TestRunBashRefusesNestedEnvironment(t *testing.T) {
 	}
 }
 
+func runInteractive(t *testing.T, home string, env *resolver.Environment, script string) string {
+	t.Helper()
+
+	rc, err := renderInteractiveRC(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rcPath := filepath.Join(t.TempDir(), "rc")
+
+	if err := os.WriteFile(rcPath, []byte(rc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "--noprofile", "--rcfile", rcPath, "-i", "-c", script)
+
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "HOME="+home, "PROMPT_COMMAND=")
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("interactive shell failed: %v", err)
+	}
+
+	return string(output)
+}
+
+func writeHomeFile(t *testing.T, home, name, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(home, name), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInteractiveRCReappliesPrefixAfterPromptCommand(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	// mimics starship-style prompts that rebuild PS1 before every prompt
+	writeHomeFile(t, home, ".bashrc", `PROMPT_COMMAND='PS1="dyn> "'`+"\n")
+
+	got := runInteractive(
+		t,
+		home,
+		&resolver.Environment{Name: "demo"},
+		`eval "$PROMPT_COMMAND"; echo "$PS1"; eval "$PROMPT_COMMAND"; echo "$PS1"`,
+	)
+
+	expected := "(aliasctl:${ALIASCTL_ENV}) dyn> \n" +
+		"(aliasctl:${ALIASCTL_ENV}) dyn> \n"
+
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestInteractiveRCFallsBackToBashProfile(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	writeHomeFile(t, home, ".bash_profile", "alias fromprofile='echo profile'\n")
+
+	got := runInteractive(t, home, &resolver.Environment{Name: "demo"}, "fromprofile")
+
+	if got != "profile\n" {
+		t.Fatalf("expected %q, got %q", "profile\n", got)
+	}
+}
+
 func TestInteractiveRCLayersOnUserRC(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not available")

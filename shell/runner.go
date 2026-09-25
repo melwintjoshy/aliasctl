@@ -62,6 +62,17 @@ func RunBash(env *resolver.Environment) error {
 	return cmd.Run()
 }
 
+// re-applied from PROMPT_COMMAND since prompts like starship rebuild PS1 before every prompt
+const bashPromptHook = `__aliasctl_prompt() {
+  case "$PS1" in
+    '(aliasctl:${ALIASCTL_ENV}) '*) ;;
+    *) PS1='(aliasctl:${ALIASCTL_ENV}) '"$PS1" ;;
+  esac
+}
+__aliasctl_prompt
+PROMPT_COMMAND="${PROMPT_COMMAND}"$'\n''__aliasctl_prompt'
+`
+
 // user rc first so project definitions win, prompt last so the rc can't overwrite it
 func renderInteractiveRC(env *resolver.Environment) (string, error) {
 	definitions, err := (BashRenderer{}).Render(env)
@@ -78,15 +89,13 @@ func renderInteractiveRC(env *resolver.Environment) (string, error) {
 		shellQuote(env.Name),
 	)
 
-	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi` + "\n")
+	// --noprofile skips .bash_profile, which is where macOS login-shell users keep things
+	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; ` +
+		`elif [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"; fi` + "\n")
 	rc.WriteString(definitions)
 
 	// referencing the variable keeps the name out of prompt expansion
-	fmt.Fprintf(
-		&rc,
-		"PS1='(aliasctl:${%s}) '\"$PS1\"\n",
-		activeEnvironmentVariable,
-	)
+	rc.WriteString(bashPromptHook)
 
 	return rc.String(), nil
 }
