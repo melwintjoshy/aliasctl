@@ -17,6 +17,8 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 		Variables: make(map[string]string),
 		Aliases:   make(map[string]Command),
 		Functions: make(map[string]string),
+
+		FunctionsFish: make(map[string]string),
 	}
 
 	for key, value := range cfg.Variables {
@@ -25,6 +27,10 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 
 	for name, body := range cfg.Functions {
 		env.Functions[name] = body
+	}
+
+	for name, body := range cfg.FunctionsFish {
+		env.FunctionsFish[name] = body
 	}
 
 	for name, command := range cfg.Aliases {

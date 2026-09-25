@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -35,7 +34,7 @@ func TestRunCommandPassesVariables(t *testing.T) {
 		"echo $ALIASCTL_TEST > " + outputFile.Name(),
 	}
 
-	if err := RunCommand(env, args); err != nil {
+	if err := (bashRunner{}).Run(env, args); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -98,7 +97,7 @@ func TestRunCommandMissingCommand(t *testing.T) {
 		Name: "test",
 	}
 
-	err := RunCommand(
+	err := (bashRunner{}).Run(
 		env,
 		[]string{"this-command-definitely-does-not-exist"},
 	)
@@ -161,7 +160,7 @@ func TestRunShellExecutesFunctions(t *testing.T) {
 func TestRunBashRefusesNestedEnvironment(t *testing.T) {
 	t.Setenv("ALIASCTL_ENV", "outer")
 
-	err := RunBash(&resolver.Environment{Name: "inner"})
+	err := (bashRunner{}).Start(&resolver.Environment{Name: "inner"})
 	if err == nil {
 		t.Fatal("expected nested environment error")
 	}
@@ -316,13 +315,20 @@ func TestInteractiveRCLayersOnUserRC(t *testing.T) {
 func runToFile(t *testing.T, env *resolver.Environment, args ...string) string {
 	t.Helper()
 
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash is not available")
+	return runToFileWith(t, bashRunner{}, "bash", env, args...)
+}
+
+// runs through the real shell binary and returns what the command wrote to the path passed last
+func runToFileWith(t *testing.T, runner Runner, binary string, env *resolver.Environment, args ...string) string {
+	t.Helper()
+
+	if _, err := exec.LookPath(binary); err != nil {
+		t.Skipf("%s is not available", binary)
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "out")
 
-	if err := RunCommand(env, append(args, outputPath)); err != nil {
+	if err := runner.Run(env, append(args, outputPath)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -385,20 +391,40 @@ func TestRunCommandSetsActiveEnvironment(t *testing.T) {
 	}
 }
 
-func TestRunCommandLeavesPlainCommand(t *testing.T) {
+func TestLookupCommand(t *testing.T) {
 	env := &resolver.Environment{
 		Aliases: map[string]resolver.Command{
 			"greet": {Name: "echo"},
 		},
+		Functions: map[string]string{
+			"deploy": "echo bash",
+		},
+		FunctionsFish: map[string]string{
+			"fishy": "echo fish",
+		},
 	}
 
-	got, err := expandCommand(env, []string{"ls", "-la"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tests := []struct {
+		name    string
+		fish    bool
+		found   bool
+		wantErr bool
+	}{
+		{name: "greet", found: true},
+		{name: "greet", fish: true, found: true},
+		{name: "deploy", found: true},
+		{name: "deploy", fish: true, wantErr: true},
+		{name: "fishy", wantErr: true},
+		{name: "fishy", fish: true, found: true},
+		{name: "ls"},
 	}
 
-	if !reflect.DeepEqual(got, []string{"ls", "-la"}) {
-		t.Fatalf("expected command unchanged, got %v", got)
+	for _, tt := range tests {
+		found, err := lookupCommand(env, tt.name, tt.fish)
+
+		if (err != nil) != tt.wantErr || found != tt.found {
+			t.Fatalf("%s (fish=%v): found=%v err=%v", tt.name, tt.fish, found, err)
+		}
 	}
 }
 
@@ -421,7 +447,7 @@ func TestRunCommandRunsFunctionWithArguments(t *testing.T) {
 		},
 	}
 
-	if err := RunCommand(env, []string{"greet", "big world", outputPath}); err != nil {
+	if err := (bashRunner{}).Run(env, []string{"greet", "big world", outputPath}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

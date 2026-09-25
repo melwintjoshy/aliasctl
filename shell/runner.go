@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -11,7 +13,43 @@ import (
 
 const activeEnvironmentVariable = "ALIASCTL_ENV"
 
-func RunBash(env *resolver.Environment) error {
+// Runner starts an interactive shell or runs one command inside the environment.
+type Runner interface {
+	Start(env *resolver.Environment) error
+	Run(env *resolver.Environment, args []string) error
+}
+
+var Supported = []string{"bash", "zsh", "fish"}
+
+func New(name string) (Runner, error) {
+	switch name {
+	case "bash":
+		return bashRunner{}, nil
+	case "zsh":
+		return zshRunner{}, nil
+	case "fish":
+		return fishRunner{}, nil
+	}
+
+	return nil, fmt.Errorf(
+		"unsupported shell %q (supported: %s)",
+		name,
+		strings.Join(Supported, ", "),
+	)
+}
+
+// DefaultShell is the basename of $SHELL when supported, otherwise bash.
+func DefaultShell() string {
+	name := filepath.Base(os.Getenv("SHELL"))
+
+	if slices.Contains(Supported, name) {
+		return name
+	}
+
+	return "bash"
+}
+
+func checkNotNested() error {
 	if active := os.Getenv(activeEnvironmentVariable); active != "" {
 		return fmt.Errorf(
 			"already inside aliasctl environment %q; exit it first",
@@ -19,95 +57,85 @@ func RunBash(env *resolver.Environment) error {
 		)
 	}
 
-	script, err := renderInteractiveRC(env)
-	if err != nil {
-		return err
+	return nil
+}
+
+// reports whether run should go through the shell, and errors when only the other dialect defines it
+func lookupCommand(env *resolver.Environment, name string, fish bool) (bool, error) {
+	if _, ok := env.Alias(name); ok {
+		return true, nil
 	}
 
-	// Create temporary Bash rc file.
-	file, err := os.CreateTemp("", "aliasctl-*.bashrc")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary rc file: %w", err)
+	own, other, otherKey := env.Functions, env.FunctionsFish, "functions_fish"
+
+	if fish {
+		own, other, otherKey = env.FunctionsFish, env.Functions, "functions"
 	}
 
-	rcPath := file.Name()
+	if _, ok := own[name]; ok {
+		return true, nil
+	}
 
-	defer func() {
+	if _, ok := other[name]; ok {
+		return false, fmt.Errorf("function %q is only defined under %s", name, otherKey)
+	}
+
+	return false, nil
+}
+
+func writeTempFile(dir, pattern, content string) (string, error) {
+	file, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	}
+
+	path := file.Name()
+
+	if _, err := file.WriteString(content); err != nil {
 		file.Close()
-		os.Remove(rcPath)
-	}()
-
-	// Write our generated environment into the rc file.
-	if _, err := file.WriteString(script); err != nil {
-		return fmt.Errorf("failed to write rc file: %w", err)
+		os.Remove(path)
+		return "", fmt.Errorf("failed to write temporary file: %w", err)
 	}
 
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("failed to close rc file: %w", err)
+		os.Remove(path)
+		return "", fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
-	// Start interactive Bash using our temporary rc file.
-	cmd := exec.Command(
-		"bash",
-		"--noprofile",
-		"--rcfile",
-		rcPath,
-		"-i",
-	)
+	return path, nil
+}
+
+func startInteractive(env *resolver.Environment, extraEnv []string, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// set before the user rc runs so it can see which environment is active
+	cmd.Env = setEnvironmentVariable(os.Environ(), activeEnvironmentVariable, env.Name)
+	cmd.Env = append(cmd.Env, extraEnv...)
+
 	return cmd.Run()
 }
 
-// re-applied from PROMPT_COMMAND since prompts like starship rebuild PS1 before every prompt
-const bashPromptHook = `__aliasctl_prompt() {
-  case "$PS1" in
-    '(aliasctl:${ALIASCTL_ENV}) '*) ;;
-    *) PS1='(aliasctl:${ALIASCTL_ENV}) '"$PS1" ;;
-  esac
-}
-__aliasctl_prompt
-PROMPT_COMMAND="${PROMPT_COMMAND}"$'\n''__aliasctl_prompt'
-`
-
-// user rc first so project definitions win, prompt last so the rc can't overwrite it
-func renderInteractiveRC(env *resolver.Environment) (string, error) {
-	definitions, err := (BashRenderer{}).Render(env)
-	if err != nil {
-		return "", err
-	}
-
-	var rc strings.Builder
-
-	fmt.Fprintf(
-		&rc,
-		"export %s=%s\n",
-		activeEnvironmentVariable,
-		shellQuote(env.Name),
-	)
-
-	// --noprofile skips .bash_profile, which is where macOS login-shell users keep things
-	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; ` +
-		`elif [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"; fi` + "\n")
-	rc.WriteString(definitions)
-
-	// referencing the variable keeps the name out of prompt expansion
-	rc.WriteString(bashPromptHook)
-
-	return rc.String(), nil
-}
-
-func RunCommand(env *resolver.Environment, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("no command specified")
-	}
-
-	args, err := expandCommand(env, args)
+// script files are read command by command, so aliases defined in them expand later on
+func runScript(env *resolver.Environment, shellArgs []string, script string, args []string) error {
+	path, err := writeTempFile("", "aliasctl-*.sh", script)
 	if err != nil {
 		return err
+	}
+
+	defer os.Remove(path)
+
+	command := append(slices.Clone(shellArgs), path)
+
+	return runPlain(env, append(command, args...))
+}
+
+func runPlain(env *resolver.Environment, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no command specified")
 	}
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -119,29 +147,6 @@ func RunCommand(env *resolver.Environment, args []string) error {
 	cmd.Env = buildEnvironment(env)
 
 	return cmd.Run()
-}
-
-// aliases and functions both go through bash so chaining and builtins behave like the shell
-func expandCommand(env *resolver.Environment, args []string) ([]string, error) {
-	_, isAlias := env.Alias(args[0])
-	_, isFunction := env.Functions[args[0]]
-
-	if !isAlias && !isFunction {
-		return args, nil
-	}
-
-	definitions, err := (BashRenderer{}).Render(env)
-	if err != nil {
-		return nil, err
-	}
-
-	// the name is written literally since bash never alias-expands "$1"; names are validated
-	script := "shopt -s expand_aliases\n" + definitions + args[0] + ` "$@"` + "\n"
-
-	return append(
-		[]string{"bash", "--noprofile", "--norc", "-c", script, "aliasctl"},
-		args[1:]...,
-	), nil
 }
 
 func buildEnvironment(env *resolver.Environment) []string {
@@ -178,4 +183,18 @@ func setEnvironmentVariable(
 	}
 
 	return append(environment, key+"="+value)
+}
+
+// prompts are re-parsed by the shell, so only plain characters of the name are shown
+func promptSafeName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case 'a' <= r && r <= 'z', 'A' <= r && r <= 'Z', '0' <= r && r <= '9':
+			return r
+		case r == '.' || r == '_' || r == '-':
+			return r
+		}
+
+		return '_'
+	}, name)
 }

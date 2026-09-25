@@ -2,7 +2,7 @@
 
 A lightweight CLI for creating **temporary, project-scoped command environments** from YAML.
 
-AliasCtl lets you define variables, aliases, and shell functions in `aliasctl.yaml`, then launch a temporary Bash shell without modifying your parent shell.
+AliasCtl lets you define variables, aliases, and shell functions in `aliasctl.yaml`, then launch a temporary Bash, Zsh or Fish shell without modifying your parent shell.
 
 ## Installation
 
@@ -53,6 +53,22 @@ deploy
 
 Exit the shell and the parent environment remains unchanged.
 
+### Choosing a shell
+
+`shell` and `run` take `--shell bash|zsh|fish`, defaulting to the basename of `$SHELL` and falling back to Bash.
+
+- **zsh** uses the same alias and function syntax as Bash. Your `.zshenv` and `.zshrc` are loaded from `$ZDOTDIR` (or `$HOME`) first, including when `.zshenv` moves `ZDOTDIR`.
+- **fish** gets aliases as fish functions, and `functions` bodies are never fed to it, because they are Bash code. Put fish bodies under `functions_fish`:
+
+```yaml
+functions:
+  deploy: |
+    go build ./... && echo "built $1"
+functions_fish:
+  deploy: |
+    go build ./...; and echo "built $argv[1]"
+```
+
 ### How the shell is built
 
 - Your `~/.bashrc` is loaded first (or `~/.bash_profile` when there is no `~/.bashrc`), then the AliasCtl definitions, so project aliases and functions win on conflicts.
@@ -73,7 +89,7 @@ Quoting follows POSIX rules: a backslash is literal inside single quotes, and in
 aliasctl init       Create a configuration
 aliasctl validate   Validate configuration
 aliasctl inspect    Inspect resolved environment
-aliasctl shell      Start temporary Bash environment
+aliasctl shell      Start temporary shell environment
 aliasctl run        Run a command with the environment
 ```
 

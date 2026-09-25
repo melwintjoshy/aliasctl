@@ -162,3 +162,32 @@ func TestValidateRejectsAliasFunctionCollision(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}
 }
+
+func TestValidateAcceptsFishFunctionsOnly(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		FunctionsFish: map[string]string{
+			"deploy": "echo deploy",
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRejectsFishFunctionAliasCollision(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Aliases: map[string]string{
+			"deploy": "echo alias",
+		},
+		FunctionsFish: map[string]string{
+			"deploy": "echo fish",
+		},
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected collision error")
+	}
+}
