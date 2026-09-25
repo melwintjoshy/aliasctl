@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/melwintjoshy/aliasctl/app"
+	"github.com/melwintjoshy/aliasctl/shell"
 )
 
 var inspectCmd = &cobra.Command{
@@ -39,15 +40,7 @@ var inspectCmd = &cobra.Command{
 		fmt.Println("-------")
 
 		for _, name := range slices.Sorted(maps.Keys(env.Aliases)) {
-			command := env.Aliases[name]
-
-			value := command.Name
-
-			if len(command.Args) > 0 {
-				value += " " + strings.Join(command.Args, " ")
-			}
-
-			fmt.Printf("%s → %s\n", name, value)
+			fmt.Printf("%s → %s\n", name, shell.FormatCommand(env.Aliases[name]))
 		}
 		fmt.Println()
 
