@@ -3,6 +3,7 @@ package shell
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -153,5 +154,84 @@ func TestRunShellExecutesFunctions(t *testing.T) {
 	expected := "hello from function\n"
 	if string(output) != expected {
 		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+}
+
+func TestRunBashRefusesNestedEnvironment(t *testing.T) {
+	t.Setenv("ALIASCTL_ENV", "outer")
+
+	err := RunBash(&resolver.Environment{Name: "inner"})
+	if err == nil {
+		t.Fatal("expected nested environment error")
+	}
+
+	expected := `already inside aliasctl environment "outer"; exit it first`
+
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestInteractiveRCLayersOnUserRC(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	userRC := "PS1='base> '\n" +
+		"alias mine='echo mine'\n" +
+		"alias shared='echo user'\n"
+
+	if err := os.WriteFile(filepath.Join(home, ".bashrc"), []byte(userRC), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	env := &resolver.Environment{
+		Name: "demo $(touch pwned)",
+		Aliases: map[string]resolver.Command{
+			"shared": {Name: "echo", Args: []string{"project"}},
+		},
+	}
+
+	rc, err := renderInteractiveRC(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rcPath := filepath.Join(t.TempDir(), "rc")
+
+	if err := os.WriteFile(rcPath, []byte(rc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"--noprofile",
+		"--rcfile", rcPath,
+		"-i",
+		"-c", `echo "$PS1"; mine; shared; echo "$ALIASCTL_ENV"`,
+	)
+
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "HOME="+home)
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("interactive shell failed: %v", err)
+	}
+
+	// the prompt holds a reference to the name, never the name itself
+	expected := "(aliasctl:${ALIASCTL_ENV}) base> \n" +
+		"mine\n" +
+		"project\n" +
+		"demo $(touch pwned)\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+
+	if _, err := os.Stat(filepath.Join(home, "pwned")); err == nil {
+		t.Fatal("environment name was executed")
 	}
 }

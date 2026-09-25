@@ -9,10 +9,17 @@ import (
 	"github.com/melwintjoshy/aliasctl/resolver"
 )
 
-func RunBash(env *resolver.Environment) error {
-	renderer := BashRenderer{}
+const activeEnvironmentVariable = "ALIASCTL_ENV"
 
-	script, err := renderer.Render(env)
+func RunBash(env *resolver.Environment) error {
+	if active := os.Getenv(activeEnvironmentVariable); active != "" {
+		return fmt.Errorf(
+			"already inside aliasctl environment %q; exit it first",
+			active,
+		)
+	}
+
+	script, err := renderInteractiveRC(env)
 	if err != nil {
 		return err
 	}
@@ -53,6 +60,35 @@ func RunBash(env *resolver.Environment) error {
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// user rc first so project definitions win, prompt last so the rc can't overwrite it
+func renderInteractiveRC(env *resolver.Environment) (string, error) {
+	definitions, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		return "", err
+	}
+
+	var rc strings.Builder
+
+	fmt.Fprintf(
+		&rc,
+		"export %s=%s\n",
+		activeEnvironmentVariable,
+		shellQuote(env.Name),
+	)
+
+	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi` + "\n")
+	rc.WriteString(definitions)
+
+	// referencing the variable keeps the name out of prompt expansion
+	fmt.Fprintf(
+		&rc,
+		"PS1='(aliasctl:${%s}) '\"$PS1\"\n",
+		activeEnvironmentVariable,
+	)
+
+	return rc.String(), nil
 }
 
 func RunCommand(env *resolver.Environment, args []string) error {
