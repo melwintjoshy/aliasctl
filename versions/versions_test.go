@@ -67,6 +67,9 @@ func TestConstraintMatch(t *testing.T) {
 		{"1.22.4", Version{1, 22, 4}, true},
 		{"1.22.4", Version{1, 22, 5}, false},
 		{"=1.22", Version{1, 22, 0}, true},
+		{"=1.22", Version{1, 22, 4}, false},
+		{"v1.22", Version{1, 22, 4}, true},
+		{">=v1.29 <v1.31", Version{1, 30, 2}, true},
 		{">=1.6", Version{1, 6}, true},
 		{">=1.6", Version{1, 5, 9}, false},
 		{">1.6", Version{1, 6, 0}, false},
@@ -90,9 +93,18 @@ func TestConstraintMatch(t *testing.T) {
 }
 
 func TestParseConstraintErrors(t *testing.T) {
-	for _, rule := range []string{"", "  ", "~>1.2", "latest", ">=", "1..2", "1.x", "* >1"} {
+	for _, rule := range []string{"", "  ", "~>1.2", "latest", ">=", "1..2", "1.x", "* >1", "v", ">=v"} {
 		if _, err := ParseConstraint(rule); err == nil {
 			t.Fatalf("expected error for %q", rule)
 		}
+	}
+
+	// a space after the operator is the common slip, so the message says what to do
+	_, err := ParseConstraint(">= 1.29")
+
+	expected := `operator ">=" must be followed by a version, e.g. >=1.29`
+
+	if err == nil || err.Error() != expected {
+		t.Fatalf("expected %q, got %v", expected, err)
 	}
 }

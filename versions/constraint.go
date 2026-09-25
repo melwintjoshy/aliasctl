@@ -19,6 +19,7 @@ type rule struct {
 var operators = []string{">=", "<=", ">", "<", "="}
 
 // ParseConstraint accepts "*", a bare version (prefix match) or space-separated comparisons.
+// A leading v on any version is ignored.
 func ParseConstraint(text string) (Constraint, error) {
 	fields := strings.Fields(text)
 
@@ -54,7 +55,14 @@ func parseRule(field string) (rule, error) {
 		}
 	}
 
-	version, ok := parseDotted(strings.TrimPrefix(field, operator))
+	text := strings.TrimPrefix(field, operator)
+
+	if operator != "" && text == "" {
+		return rule{}, fmt.Errorf("operator %q must be followed by a version, e.g. %s1.29", operator, operator)
+	}
+
+	// kubectl, helm and node print a leading v, so rules get written that way too
+	version, ok := parseDotted(strings.TrimPrefix(text, "v"))
 	if !ok {
 		return rule{}, fmt.Errorf("invalid version rule %q", field)
 	}
