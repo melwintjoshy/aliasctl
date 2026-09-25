@@ -2,6 +2,8 @@ package shell
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -12,26 +14,26 @@ type BashRenderer struct{}
 func (r BashRenderer) Render(env *resolver.Environment) (string, error) {
 	var output strings.Builder
 
-	for key, value := range env.Variables {
+	for _, key := range slices.Sorted(maps.Keys(env.Variables)) {
 		fmt.Fprintf(
 			&output,
 			"export %s=%s\n",
 			key,
-			shellQuote(value),
+			shellQuote(env.Variables[key]),
 		)
 	}
 
-	for name, command := range env.Aliases {
+	for _, name := range slices.Sorted(maps.Keys(env.Aliases)) {
 		fmt.Fprintf(
 			&output,
 			"alias %s=%s\n",
 			name,
-			shellQuote(aliasValue(command)),
+			shellQuote(aliasValue(env.Aliases[name])),
 		)
 	}
 
-	for name, body := range env.Functions {
-		body = strings.TrimRight(body, "\n")
+	for _, name := range slices.Sorted(maps.Keys(env.Functions)) {
+		body := strings.TrimRight(env.Functions[name], "\n")
 		fmt.Fprintf(&output, "%s() {\n%s\n}\n", name, body)
 	}
 

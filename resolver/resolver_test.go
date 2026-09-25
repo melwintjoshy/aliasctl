@@ -178,3 +178,102 @@ go build ./...
 		t.Fatalf("expected %q, got %q", expected, body)
 	}
 }
+
+func TestResolveUndefinedVariable(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+
+		Aliases: map[string]string{
+			"kgp": "kubectl get pods -n ${ALIASCTL_TEST_UNDEFINED}",
+		},
+	}
+
+	_, err := Resolve(cfg)
+
+	if err == nil {
+		t.Fatal("expected error for undefined variable")
+	}
+
+	expected := `invalid alias "kgp": undefined variable "ALIASCTL_TEST_UNDEFINED"`
+
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestResolveFallsBackToProcessEnvironment(t *testing.T) {
+	t.Setenv("ALIASCTL_TEST_HOME", "/home/test")
+
+	cfg := &config.Config{
+		Name: "test",
+
+		Aliases: map[string]string{
+			"home": "ls ${ALIASCTL_TEST_HOME}",
+		},
+	}
+
+	env, err := Resolve(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := Command{
+		Name: "ls",
+		Args: []string{"/home/test"},
+	}
+
+	if !reflect.DeepEqual(env.Aliases["home"], expected) {
+		t.Fatalf("expected %+v, got %+v", expected, env.Aliases["home"])
+	}
+}
+
+func TestResolveConfigVariableOverridesProcessEnvironment(t *testing.T) {
+	t.Setenv("NAMESPACE", "from-env")
+
+	cfg := &config.Config{
+		Name: "test",
+
+		Variables: map[string]string{
+			"NAMESPACE": "from-config",
+		},
+
+		Aliases: map[string]string{
+			"ns": "echo ${NAMESPACE}",
+		},
+	}
+
+	env, err := Resolve(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := env.Aliases["ns"].Args[0]; got != "from-config" {
+		t.Fatalf("expected %q, got %q", "from-config", got)
+	}
+}
+
+func TestResolveDoesNotReexpandSubstitutedValues(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+
+		Variables: map[string]string{
+			"A": "${B}",
+			"B": "expanded",
+		},
+
+		Aliases: map[string]string{
+			"show": "echo ${A}",
+		},
+	}
+
+	for range 20 {
+		env, err := Resolve(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if got := env.Aliases["show"].Args[0]; got != "${B}" {
+			t.Fatalf("expected %q, got %q", "${B}", got)
+		}
+	}
+}

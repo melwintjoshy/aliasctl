@@ -312,3 +312,42 @@ func TestBashRendererFunctionExecutes(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, string(output))
 	}
 }
+
+func TestBashRendererOutputIsStable(t *testing.T) {
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"B": "2",
+			"A": "1",
+			"C": "3",
+		},
+
+		Aliases: map[string]resolver.Command{
+			"z": {Name: "echo"},
+			"a": {Name: "ls"},
+		},
+
+		Functions: map[string]string{
+			"second": "echo 2",
+			"first":  "echo 1",
+		},
+	}
+
+	expected := "export A='1'\n" +
+		"export B='2'\n" +
+		"export C='3'\n" +
+		"alias a=" + shellQuote("'ls'") + "\n" +
+		"alias z=" + shellQuote("'echo'") + "\n" +
+		"first() {\necho 1\n}\n" +
+		"second() {\necho 2\n}\n"
+
+	for range 20 {
+		output, err := (BashRenderer{}).Render(env)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if output != expected {
+			t.Fatalf("expected:\n%s\ngot:\n%s", expected, output)
+		}
+	}
+}

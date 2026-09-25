@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 )
 
 func (c *Config) Validate() error {
@@ -14,18 +16,18 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one alias is required")
 	}
 
-	for name := range c.Aliases {
+	for _, name := range slices.Sorted(maps.Keys(c.Aliases)) {
 		if !isValidAliasName(name) {
 			return fmt.Errorf("invalid alias name: %q", name)
 		}
 	}
-	for name := range c.Functions {
+	for _, name := range slices.Sorted(maps.Keys(c.Functions)) {
 		if !isValidIdentifier(name) {
 			return fmt.Errorf("invalid function name: %q", name)
 		}
 	}
 
-	for name := range c.Variables {
+	for _, name := range slices.Sorted(maps.Keys(c.Variables)) {
 		if !isValidIdentifier(name) {
 			return fmt.Errorf("invalid variable name: %q", name)
 		}

@@ -2,7 +2,8 @@ package resolver
 
 import (
 	"fmt"
-	"strings"
+	"os"
+	"regexp"
 
 	"github.com/melwintjoshy/aliasctl/config"
 )
@@ -24,7 +25,14 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 	}
 
 	for name, command := range cfg.Aliases {
-		resolved := resolveVariables(command, cfg.Variables)
+		resolved, err := resolveVariables(command, cfg.Variables)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid alias %q: %w",
+				name,
+				err,
+			)
+		}
 
 		parsed, err := parseCommand(resolved)
 		if err != nil {
@@ -41,11 +49,33 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 	return env, nil
 }
 
-func resolveVariables(value string, variables map[string]string) string {
-	for key, variableValue := range variables {
-		placeholder := "${" + key + "}"
-		value = strings.ReplaceAll(value, placeholder, variableValue)
+var placeholderPattern = regexp.MustCompile(`\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}`)
+
+// single pass so substituted values are never re-expanded; config wins over the process env
+func resolveVariables(value string, variables map[string]string) (string, error) {
+	var missing string
+
+	resolved := placeholderPattern.ReplaceAllStringFunc(value, func(match string) string {
+		name := placeholderPattern.FindStringSubmatch(match)[1]
+
+		if variableValue, ok := variables[name]; ok {
+			return variableValue
+		}
+
+		if variableValue, ok := os.LookupEnv(name); ok {
+			return variableValue
+		}
+
+		if missing == "" {
+			missing = name
+		}
+
+		return match
+	})
+
+	if missing != "" {
+		return "", fmt.Errorf("undefined variable %q", missing)
 	}
 
-	return value
+	return resolved, nil
 }

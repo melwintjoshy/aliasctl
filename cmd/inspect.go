@@ -2,7 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,15 +30,7 @@ var inspectCmd = &cobra.Command{
 		fmt.Println("Variables")
 		fmt.Println("---------")
 
-		variableNames := make([]string, 0, len(env.Variables))
-
-		for name := range env.Variables {
-			variableNames = append(variableNames, name)
-		}
-
-		sort.Strings(variableNames)
-
-		for _, name := range variableNames {
+		for _, name := range slices.Sorted(maps.Keys(env.Variables)) {
 			fmt.Printf("%s=%s\n", name, env.Variables[name])
 		}
 
@@ -45,15 +38,7 @@ var inspectCmd = &cobra.Command{
 		fmt.Println("Aliases")
 		fmt.Println("-------")
 
-		aliasNames := make([]string, 0, len(env.Aliases))
-
-		for name := range env.Aliases {
-			aliasNames = append(aliasNames, name)
-		}
-
-		sort.Strings(aliasNames)
-
-		for _, name := range aliasNames {
+		for _, name := range slices.Sorted(maps.Keys(env.Aliases)) {
 			command := env.Aliases[name]
 
 			value := command.Name
@@ -66,18 +51,10 @@ var inspectCmd = &cobra.Command{
 		}
 		fmt.Println()
 
-		functionNames := make([]string, 0, len(env.Functions))
-
-		for name := range env.Functions {
-			functionNames = append(functionNames, name)
-		}
-
-		sort.Strings(functionNames)
-
 		fmt.Println("Functions")
 		fmt.Println("---------")
 
-		for _, name := range functionNames {
+		for _, name := range slices.Sorted(maps.Keys(env.Functions)) {
 			fmt.Println(name)
 
 			body := strings.TrimRight(env.Functions[name], "\n")
