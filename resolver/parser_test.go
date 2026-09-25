@@ -197,3 +197,38 @@ func TestTokenizeTrailingBackslashInQuotes(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckShellSyntax(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "plain command", input: "kubectl get pods -n app-prod"},
+		{name: "placeholder", input: "kubectl -n ${NAMESPACE}"},
+		{name: "quoted metacharacters", input: `git commit -m "fix: a; b | c"`},
+		{name: "single quoted glob", input: `echo '*.go'`},
+		{name: "escaped pipe", input: `echo a \| b`},
+		{name: "tilde inside a word", input: "git reset HEAD~1"},
+		{name: "glob", input: "ls *.go", wantErr: true},
+		{name: "pipe", input: "ps aux | grep go", wantErr: true},
+		{name: "redirect", input: "echo hi > out", wantErr: true},
+		{name: "command chain", input: "make && make test", wantErr: true},
+		{name: "bare variable", input: "echo $HOME", wantErr: true},
+		{name: "leading tilde", input: "ls ~/src", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkShellSyntax(tt.input)
+
+			if tt.wantErr && err == nil {
+				t.Fatalf("expected error for %q", tt.input)
+			}
+
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error for %q: %v", tt.input, err)
+			}
+		})
+	}
+}

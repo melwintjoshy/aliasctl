@@ -298,3 +298,24 @@ func TestResolveReportsAllUndefinedVariables(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}
 }
+
+func TestResolveRejectsShellSyntaxInAlias(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+
+		Aliases: map[string]string{
+			"gofiles": "ls *.go",
+		},
+	}
+
+	_, err := Resolve(cfg)
+	if err == nil {
+		t.Fatal("expected shell syntax error")
+	}
+
+	expected := `invalid alias "gofiles": shell syntax "*" is not supported in aliases; quote it or use a function`
+
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}

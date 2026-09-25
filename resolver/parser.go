@@ -21,8 +21,21 @@ func parseCommand(input string) (Command, error) {
 	}, nil
 }
 
-// posix quoting: nothing escapes in single quotes, only $ ` " \ and newline in double quotes
+// characters bash would treat as syntax; aliases are structured commands, so they'd go through literally
+const shellSyntax = "|&;<>()$`*?["
+
 func tokenize(input string) ([]string, error) {
+	return scanTokens(input, false)
+}
+
+// placeholders are stood in for first since they're substituted, not shell syntax
+func checkShellSyntax(input string) error {
+	_, err := scanTokens(placeholderPattern.ReplaceAllString(input, "x"), true)
+	return err
+}
+
+// posix quoting: nothing escapes in single quotes, only $ ` " \ and newline in double quotes
+func scanTokens(input string, rejectShellSyntax bool) ([]string, error) {
 	var tokens []string
 	var current []rune
 
@@ -86,6 +99,13 @@ func tokenize(input string) ([]string, error) {
 			}
 
 		default:
+			if rejectShellSyntax && (strings.ContainsRune(shellSyntax, ch) || (ch == '~' && !tokenStarted)) {
+				return nil, fmt.Errorf(
+					"shell syntax %q is not supported in aliases; quote it or use a function",
+					string(ch),
+				)
+			}
+
 			current = append(current, ch)
 			tokenStarted = true
 		}

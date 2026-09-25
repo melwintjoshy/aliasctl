@@ -28,6 +28,14 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 	}
 
 	for name, command := range cfg.Aliases {
+		if err := checkShellSyntax(command); err != nil {
+			return nil, fmt.Errorf(
+				"invalid alias %q: %w",
+				name,
+				err,
+			)
+		}
+
 		resolved, err := resolveVariables(command, cfg.Variables)
 		if err != nil {
 			return nil, fmt.Errorf(

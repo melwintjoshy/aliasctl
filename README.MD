@@ -55,13 +55,15 @@ Exit the shell and the parent environment remains unchanged.
 
 ### How the shell is built
 
-- Your `~/.bashrc` is loaded first, then the AliasCtl definitions, so project aliases and functions win on conflicts.
-- The prompt is prefixed with `(aliasctl:<name>)` and `ALIASCTL_ENV` is set to the environment name.
+- Your `~/.bashrc` is loaded first (or `~/.bash_profile` when there is no `~/.bashrc`), then the AliasCtl definitions, so project aliases and functions win on conflicts.
+- The prompt is prefixed with `(aliasctl:<name>)` and `ALIASCTL_ENV` is set to the environment name. The prefix is re-applied from `PROMPT_COMMAND`, so prompts that rebuild `PS1` (starship, git-prompt) keep it.
 - Running `aliasctl shell` inside an AliasCtl shell is refused; exit the current one first.
 
 ### Variables in aliases
 
-`${NAME}` in an alias is replaced with the value from `variables`, falling back to the process environment (for example `${HOME}`). An undefined name is a configuration error. Substituted values are not expanded again, and each argument keeps its boundaries, so values containing spaces or `;` are passed as plain text.
+`${NAME}` in an alias is replaced with the value from `variables`, falling back to the process environment (for example `${HOME}`). An undefined name is a configuration error. Because of that fallback, a config that relies on environment variables can validate on one machine and fail on another. Substituted values are not expanded again, and each argument keeps its boundaries, so values containing spaces or `;` are passed as plain text.
+
+Aliases are structured commands, not shell code: globs, `~`, `$VAR`, pipes, redirects and `&&` are not expanded, so unquoted shell syntax in an alias is rejected. Quote it to pass it as plain text, or use a function when you need the shell.
 
 Quoting follows POSIX rules: a backslash is literal inside single quotes, and inside double quotes it only escapes `$`, `` ` ``, `"`, `\` and newline. So `printf "[%s]\n"` keeps its `\n`. Earlier versions dropped every backslash, which turned `"\n"` into `n`.
 
