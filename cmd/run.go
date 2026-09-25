@@ -35,5 +35,8 @@ var runCmd = &cobra.Command{
 }
 
 func init() {
+	// flags after the command belong to it, e.g. "aliasctl run kgp --help"
+	runCmd.Flags().SetInterspersed(false)
+
 	rootCmd.AddCommand(runCmd)
 }

@@ -96,6 +96,11 @@ func RunCommand(env *resolver.Environment, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
+	args, err := expandCommand(env, args)
+	if err != nil {
+		return err
+	}
+
 	cmd := exec.Command(args[0], args[1:]...)
 
 	cmd.Stdin = os.Stdin
@@ -105,6 +110,31 @@ func RunCommand(env *resolver.Environment, args []string) error {
 	cmd.Env = buildEnvironment(env)
 
 	return cmd.Run()
+}
+
+// aliases exec their parsed command directly; functions need bash to exist
+func expandCommand(env *resolver.Environment, args []string) ([]string, error) {
+	if command, ok := env.Alias(args[0]); ok {
+		expanded := append([]string{command.Name}, command.Args...)
+		return append(expanded, args[1:]...), nil
+	}
+
+	if _, ok := env.Functions[args[0]]; !ok {
+		return args, nil
+	}
+
+	definitions, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		return nil, err
+	}
+
+	// expand_aliases keeps function bodies that use project aliases working like in the shell
+	script := "shopt -s expand_aliases\n" + definitions + `"$@"` + "\n"
+
+	return append(
+		[]string{"bash", "--noprofile", "--norc", "-c", script, "aliasctl"},
+		args...,
+	), nil
 }
 
 func buildEnvironment(env *resolver.Environment) []string {

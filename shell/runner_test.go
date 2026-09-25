@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -233,5 +234,74 @@ func TestInteractiveRCLayersOnUserRC(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(home, "pwned")); err == nil {
 		t.Fatal("environment name was executed")
+	}
+}
+
+func TestRunCommandExpandsAlias(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"greet": {Name: "echo", Args: []string{"hello world"}},
+		},
+	}
+
+	got, err := expandCommand(env, []string{"greet", "--loud"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := []string{"echo", "hello world", "--loud"}
+
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestRunCommandLeavesPlainCommand(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"greet": {Name: "echo"},
+		},
+	}
+
+	got, err := expandCommand(env, []string{"ls", "-la"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, []string{"ls", "-la"}) {
+		t.Fatalf("expected command unchanged, got %v", got)
+	}
+}
+
+func TestRunCommandRunsFunctionWithArguments(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "out")
+
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"GREETING": "hello",
+		},
+		Aliases: map[string]resolver.Command{
+			"say": {Name: "echo"},
+		},
+		Functions: map[string]string{
+			"greet": `say "$GREETING $1" > "$2"`,
+		},
+	}
+
+	if err := RunCommand(env, []string{"greet", "big world", outputPath}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "hello big world\n" {
+		t.Fatalf("expected %q, got %q", "hello big world\n", string(data))
 	}
 }
