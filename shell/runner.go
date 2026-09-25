@@ -49,7 +49,12 @@ func DefaultShell() string {
 	return "bash"
 }
 
+// hook-loaded state is fine to start a shell from; only an explicit aliasctl shell is refused
 func checkNotNested() error {
+	if os.Getenv(hookEnvironmentVariable) != "" {
+		return nil
+	}
+
 	if active := os.Getenv(activeEnvironmentVariable); active != "" {
 		return fmt.Errorf(
 			"already inside aliasctl environment %q; exit it first",
@@ -113,7 +118,11 @@ func startInteractive(env *resolver.Environment, extraEnv []string, name string,
 	cmd.Stderr = os.Stderr
 
 	// set before the user rc runs so it can see which environment is active
-	cmd.Env = setEnvironmentVariable(os.Environ(), activeEnvironmentVariable, env.Name)
+	cmd.Env = setEnvironmentVariable(
+		unsetEnvironmentVariable(os.Environ(), hookEnvironmentVariable),
+		activeEnvironmentVariable,
+		env.Name,
+	)
 	cmd.Env = append(cmd.Env, extraEnv...)
 
 	return cmd.Run()
@@ -151,7 +160,7 @@ func runPlain(env *resolver.Environment, args []string) error {
 
 func buildEnvironment(env *resolver.Environment) []string {
 	environment := setEnvironmentVariable(
-		os.Environ(),
+		unsetEnvironmentVariable(os.Environ(), hookEnvironmentVariable),
 		activeEnvironmentVariable,
 		env.Name,
 	)
@@ -183,6 +192,12 @@ func setEnvironmentVariable(
 	}
 
 	return append(environment, key+"="+value)
+}
+
+func unsetEnvironmentVariable(environment []string, key string) []string {
+	return slices.DeleteFunc(environment, func(entry string) bool {
+		return strings.HasPrefix(entry, key+"=")
+	})
 }
 
 // prompts are re-parsed by the shell, so only plain characters of the name are shown

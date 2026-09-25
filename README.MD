@@ -91,6 +91,9 @@ aliasctl validate   Validate configuration
 aliasctl inspect    Inspect resolved environment
 aliasctl shell      Start temporary shell environment
 aliasctl run        Run a command with the environment
+aliasctl export     Print the environment as shell code for eval
+aliasctl hook       Print a snippet that auto-activates on cd
+aliasctl allow      Trust a configuration for auto-activation
 ```
 
 `aliasctl run` also understands the configuration's names: an alias runs its command directly with any extra arguments appended, and a function runs in Bash with its arguments as `$1`, `$2`, …
@@ -105,6 +108,21 @@ Use a specific configuration:
 ```bash
 aliasctl --config dev.yaml shell
 ```
+
+## Auto-activation
+
+Instead of starting a subshell, you can have your own shell load `aliasctl.yaml` when you `cd` into a project and unload it when you leave:
+
+```bash
+eval "$(aliasctl hook bash)"   # in ~/.bashrc
+eval "$(aliasctl hook zsh)"    # in ~/.zshrc
+```
+
+- A configuration is only loaded after you trust it with `aliasctl allow`, which records its path and a hash of its content. An unknown or edited file is refused with a one-line hint, so cloning a repository never runs its configuration on the next prompt.
+- On leaving, project aliases, functions and variables are removed, and anything they shadowed (your own aliases, functions and previous variable values) is restored. The `(aliasctl:<name>)` prompt prefix is removed too.
+- The configuration is picked up again on the next directory change, not when the file is edited in place.
+- `aliasctl shell` still works inside an auto-activated directory.
+- Only Bash and Zsh are supported for auto-activation.
 
 ## Architecture
 

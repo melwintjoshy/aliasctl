@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -458,5 +459,24 @@ func TestRunCommandRunsFunctionWithArguments(t *testing.T) {
 
 	if string(data) != "hello big world\n" {
 		t.Fatalf("expected %q, got %q", "hello big world\n", string(data))
+	}
+}
+
+func TestStartAllowedFromHookLoadedEnvironment(t *testing.T) {
+	t.Setenv("ALIASCTL_ENV", "auto")
+	t.Setenv("ALIASCTL_HOOK", "1")
+
+	if err := checkNotNested(); err != nil {
+		t.Fatalf("expected hook-loaded environment to allow a shell, got %v", err)
+	}
+}
+
+func TestChildEnvironmentDropsHookMarker(t *testing.T) {
+	t.Setenv("ALIASCTL_HOOK", "1")
+
+	for _, entry := range buildEnvironment(&resolver.Environment{Name: "demo"}) {
+		if strings.HasPrefix(entry, "ALIASCTL_HOOK=") {
+			t.Fatal("ALIASCTL_HOOK leaked into the child environment")
+		}
 	}
 }
