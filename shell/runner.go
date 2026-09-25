@@ -112,14 +112,12 @@ func RunCommand(env *resolver.Environment, args []string) error {
 	return cmd.Run()
 }
 
-// aliases exec their parsed command directly; functions need bash to exist
+// aliases and functions both go through bash so chaining and builtins behave like the shell
 func expandCommand(env *resolver.Environment, args []string) ([]string, error) {
-	if command, ok := env.Alias(args[0]); ok {
-		expanded := append([]string{command.Name}, command.Args...)
-		return append(expanded, args[1:]...), nil
-	}
+	_, isAlias := env.Alias(args[0])
+	_, isFunction := env.Functions[args[0]]
 
-	if _, ok := env.Functions[args[0]]; !ok {
+	if !isAlias && !isFunction {
 		return args, nil
 	}
 
@@ -128,17 +126,21 @@ func expandCommand(env *resolver.Environment, args []string) ([]string, error) {
 		return nil, err
 	}
 
-	// expand_aliases keeps function bodies that use project aliases working like in the shell
-	script := "shopt -s expand_aliases\n" + definitions + `"$@"` + "\n"
+	// the name is written literally since bash never alias-expands "$1"; names are validated
+	script := "shopt -s expand_aliases\n" + definitions + args[0] + ` "$@"` + "\n"
 
 	return append(
 		[]string{"bash", "--noprofile", "--norc", "-c", script, "aliasctl"},
-		args...,
+		args[1:]...,
 	), nil
 }
 
 func buildEnvironment(env *resolver.Environment) []string {
-	environment := os.Environ()
+	environment := setEnvironmentVariable(
+		os.Environ(),
+		activeEnvironmentVariable,
+		env.Name,
+	)
 
 	for key, value := range env.Variables {
 		environment = setEnvironmentVariable(

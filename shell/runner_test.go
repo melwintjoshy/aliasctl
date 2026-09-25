@@ -237,22 +237,75 @@ func TestInteractiveRCLayersOnUserRC(t *testing.T) {
 	}
 }
 
-func TestRunCommandExpandsAlias(t *testing.T) {
-	env := &resolver.Environment{
-		Aliases: map[string]resolver.Command{
-			"greet": {Name: "echo", Args: []string{"hello world"}},
-		},
+func runToFile(t *testing.T, env *resolver.Environment, args ...string) string {
+	t.Helper()
+
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
 	}
 
-	got, err := expandCommand(env, []string{"greet", "--loud"})
-	if err != nil {
+	outputPath := filepath.Join(t.TempDir(), "out")
+
+	if err := RunCommand(env, append(args, outputPath)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := []string{"echo", "hello world", "--loud"}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if !reflect.DeepEqual(got, expected) {
-		t.Fatalf("expected %v, got %v", expected, got)
+	return string(data)
+}
+
+// write prints every arg but the last into the file named by the last
+func TestRunCommandRunsAliasWithExtraArguments(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"greet": {Name: "write", Args: []string{"hello world"}},
+		},
+		Functions: map[string]string{
+			"write": `printf '[%s]' "${@:1:$#-1}" > "${@: -1}"`,
+		},
+	}
+
+	got := runToFile(t, env, "greet", "--loud")
+
+	if got != "[hello world][--loud]" {
+		t.Fatalf("unexpected output %q", got)
+	}
+}
+
+func TestRunCommandRunsChainedAlias(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"base":  {Name: "write", Args: []string{"base"}},
+			"chain": {Name: "base", Args: []string{"-w"}},
+		},
+		Functions: map[string]string{
+			"write": `printf '[%s]' "${@:1:$#-1}" > "${@: -1}"`,
+		},
+	}
+
+	got := runToFile(t, env, "chain")
+
+	if got != "[base][-w]" {
+		t.Fatalf("unexpected output %q", got)
+	}
+}
+
+func TestRunCommandSetsActiveEnvironment(t *testing.T) {
+	env := &resolver.Environment{
+		Name: "demo",
+		Functions: map[string]string{
+			"which_env": `echo "$ALIASCTL_ENV" > "$1"`,
+		},
+	}
+
+	got := runToFile(t, env, "which_env")
+
+	if got != "demo\n" {
+		t.Fatalf("expected %q, got %q", "demo\n", got)
 	}
 }
 
