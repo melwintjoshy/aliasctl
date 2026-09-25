@@ -7,6 +7,9 @@ type Environment struct {
 	Functions map[string]string
 
 	FunctionsFish map[string]string
+
+	// sorted by name
+	Tools []ToolRequirement
 }
 
 func (e *Environment) Variable(name string) (string, bool) {

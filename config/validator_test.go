@@ -191,3 +191,56 @@ func TestValidateRejectsFishFunctionAliasCollision(t *testing.T) {
 		t.Fatal("expected collision error")
 	}
 }
+
+func TestValidateTools(t *testing.T) {
+	tests := []struct {
+		name    string
+		tools   map[string]ToolSpec
+		wantErr string
+	}{
+		{
+			name: "valid rules",
+			tools: map[string]ToolSpec{
+				"go":             {Version: "1.22"},
+				"kubectl":        {Version: ">=1.29 <1.31"},
+				"docker-compose": {Version: "*"},
+				"python3":        {Version: "3.12", Check: "python3 --version"},
+			},
+		},
+		{
+			name:    "bad rule",
+			tools:   map[string]ToolSpec{"go": {Version: "~>1.2"}},
+			wantErr: `invalid tool "go": invalid version rule "~>1.2"`,
+		},
+		{
+			name:    "missing rule",
+			tools:   map[string]ToolSpec{"go": {Check: "go version"}},
+			wantErr: `invalid tool "go": version rule is empty`,
+		},
+		{
+			name:    "bad name",
+			tools:   map[string]ToolSpec{"-go": {Version: "1"}},
+			wantErr: `invalid tool name: "-go"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Name:    "test",
+				Aliases: map[string]string{"k": "kubectl"},
+				Tools:   tt.tools,
+			}
+
+			err := cfg.Validate()
+
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr) {
+				t.Fatalf("expected %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
