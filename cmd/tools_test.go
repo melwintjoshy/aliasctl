@@ -36,6 +36,7 @@ tools:
   fakekube: "<1.30"
   fakejava: "*"
   fakemissing: ">=1.6"
+  fakeslow: { version: "*", check: "fakeslow --version", timeout: 300ms }
 `
 
 func TestToolsCheckReportsProblems(t *testing.T) {
@@ -43,6 +44,7 @@ func TestToolsCheckReportsProblems(t *testing.T) {
 		"fakego":   `echo "go version go1.22.4 darwin/arm64"`,
 		"fakekube": `echo "Client Version: v1.36.4"`,
 		"fakejava": `echo "Unable to locate a Java Runtime." >&2; exit 1`,
+		"fakeslow": `/bin/sleep 5; echo 1.0`,
 	})
 
 	path := writeTestConfig(t, toolsConfig)
@@ -58,6 +60,8 @@ func TestToolsCheckReportsProblems(t *testing.T) {
 		"fakejava     *      -       broken",
 		"fakekube     <1.30  1.36.4  mismatch",
 		"fakemissing  >=1.6  -       missing   -",
+		"fakeslow     *      -       timeout",
+		"no answer within 300ms",
 		"Unable to locate a Java Runtime.",
 	} {
 		if !strings.Contains(output, row) {
@@ -101,6 +105,7 @@ func TestWarnToolProblems(t *testing.T) {
 		"fakego":   `echo "go1.22.4"`,
 		"fakekube": `echo "v1.36.4"`,
 		"fakejava": `exit 1`,
+		"fakeslow": `/bin/sleep 5; echo 1.0`,
 	})
 
 	env, err := app.LoadEnvironment(writeTestConfig(t, toolsConfig))
@@ -115,6 +120,7 @@ func TestWarnToolProblems(t *testing.T) {
 	expected := `aliasctl: fakejava is installed but not working: exit status 1
 aliasctl: fakekube 1.36.4 does not match "<1.30"
 aliasctl: fakemissing is not installed (want ">=1.6")
+aliasctl: fakeslow gave no answer within 300ms; set timeout: in the config if it is just slow to start
 aliasctl: run "aliasctl tools check" for details
 `
 

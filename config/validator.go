@@ -5,6 +5,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"time"
 
 	"github.com/melwintjoshy/aliasctl/versions"
 )
@@ -51,12 +52,33 @@ func (c *Config) Validate() error {
 		if _, err := versions.ParseConstraint(c.Tools[name].Version); err != nil {
 			return fmt.Errorf("invalid tool %q: %w", name, err)
 		}
+
+		if err := validateTimeout(c.Tools[name].Timeout); err != nil {
+			return fmt.Errorf("invalid tool %q: %w", name, err)
+		}
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(c.Variables)) {
 		if !isValidIdentifier(name) {
 			return fmt.Errorf("invalid variable name: %q", name)
 		}
+	}
+
+	return nil
+}
+
+func validateTimeout(text string) error {
+	if text == "" {
+		return nil
+	}
+
+	timeout, err := time.ParseDuration(text)
+	if err != nil {
+		return fmt.Errorf("invalid timeout %q, use a duration like 10s", text)
+	}
+
+	if timeout <= 0 {
+		return fmt.Errorf("timeout %q must be positive", text)
 	}
 
 	return nil

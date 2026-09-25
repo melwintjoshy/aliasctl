@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/melwintjoshy/aliasctl/config"
 )
@@ -13,6 +14,9 @@ type ToolRequirement struct {
 	Name  string
 	Rule  string
 	Check Command
+
+	// zero means the checker's default
+	Timeout time.Duration
 }
 
 // tools whose --version flag doesn't work or prints the wrong thing
@@ -48,10 +52,14 @@ func resolveTools(cfg *config.Config) ([]ToolRequirement, error) {
 			check = parsed
 		}
 
+		// validation already rejected anything that does not parse
+		timeout, _ := time.ParseDuration(spec.Timeout)
+
 		requirements = append(requirements, ToolRequirement{
-			Name:  name,
-			Rule:  spec.Version,
-			Check: check,
+			Name:    name,
+			Rule:    spec.Version,
+			Check:   check,
+			Timeout: timeout,
 		})
 	}
 

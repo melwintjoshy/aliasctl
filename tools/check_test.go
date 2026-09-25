@@ -124,7 +124,7 @@ func TestCheckTimesOut(t *testing.T) {
 		[]string{"PATH=" + dir},
 	)
 
-	if results[0].Status != StatusBroken || results[0].Detail != "timed out after 200ms" {
+	if results[0].Status != StatusTimeout || results[0].Detail != "no answer within 200ms" {
 		t.Fatalf("expected timeout, got %+v", results[0])
 	}
 
@@ -164,6 +164,10 @@ func TestResultProblem(t *testing.T) {
 		{
 			Result{Name: "java", Status: StatusBroken, Detail: "Unable to locate a Java Runtime."},
 			"java is installed but not working: Unable to locate a Java Runtime.",
+		},
+		{
+			Result{Name: "swift", Status: StatusTimeout, Detail: "no answer within 5s"},
+			"swift gave no answer within 5s; set timeout: in the config if it is just slow to start",
 		},
 	}
 
@@ -234,5 +238,24 @@ func TestFindExecutableKeepsDotEntriesRelative(t *testing.T) {
 
 	if got := checker.resolve("/usr/bin/tool"); got != "/usr/bin/tool" {
 		t.Fatalf("absolute path changed to %q", got)
+	}
+}
+
+func TestCheckHonoursRequirementTimeout(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTool(t, dir, "slowstart", "/bin/sleep 0.5; echo 1.0")
+
+	slow := requirement("slowstart", "*")
+	slow.Timeout = 5 * time.Second
+
+	results := Checker{Timeout: 100 * time.Millisecond}.Check(
+		context.Background(),
+		[]resolver.ToolRequirement{slow},
+		[]string{"PATH=" + dir},
+	)
+
+	if results[0].Status != StatusOK {
+		t.Fatalf("expected the per-tool timeout to apply, got %+v", results[0])
 	}
 }

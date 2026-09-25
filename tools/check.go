@@ -23,6 +23,7 @@ const (
 	StatusMissing  Status = "missing"
 	StatusBroken   Status = "broken"
 	StatusMismatch Status = "mismatch"
+	StatusTimeout  Status = "timeout"
 )
 
 // Result is what one tool probe found; Found is nil when no version could be read.
@@ -89,7 +90,12 @@ func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirem
 
 	result.Path = path
 
-	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	timeout := c.Timeout
+	if requirement.Timeout > 0 {
+		timeout = requirement.Timeout
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, path, requirement.Check.Args...)
@@ -105,8 +111,9 @@ func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirem
 	output, err := cmd.CombinedOutput()
 
 	switch {
+	// a slow first start is not a broken tool, so it gets its own status and hint
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		result.Status, result.Detail = StatusBroken, fmt.Sprintf("timed out after %s", c.Timeout)
+		result.Status, result.Detail = StatusTimeout, fmt.Sprintf("no answer within %s", timeout)
 		return result
 
 	case err != nil:
@@ -208,6 +215,8 @@ func (r Result) Problem() string {
 		return fmt.Sprintf("%s %s does not match %q", r.Name, r.Found, r.Rule)
 	case StatusBroken:
 		return fmt.Sprintf("%s is installed but not working: %s", r.Name, r.Detail)
+	case StatusTimeout:
+		return fmt.Sprintf("%s gave %s; set timeout: in the config if it is just slow to start", r.Name, r.Detail)
 	}
 
 	return ""

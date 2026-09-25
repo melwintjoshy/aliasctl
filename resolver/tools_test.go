@@ -3,6 +3,7 @@ package resolver
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/melwintjoshy/aliasctl/config"
 )
@@ -21,6 +22,7 @@ func TestResolveTools(t *testing.T) {
 			"terraform": {Version: ">=1.6"},
 			"go":        {Version: "1.22"},
 			"mytool":    {Version: "2", Check: `mytool version --context ${CTX} "long name"`},
+			"swift":     {Version: "*", Timeout: "20s"},
 		},
 	}
 
@@ -36,6 +38,7 @@ func TestResolveTools(t *testing.T) {
 			Rule:  "2",
 			Check: Command{Name: "mytool", Args: []string{"version", "--context", "prod", "long name"}},
 		},
+		{Name: "swift", Rule: "*", Check: Command{Name: "swift", Args: []string{"--version"}}, Timeout: 20 * time.Second},
 		{Name: "terraform", Rule: ">=1.6", Check: Command{Name: "terraform", Args: []string{"--version"}}},
 	}
 

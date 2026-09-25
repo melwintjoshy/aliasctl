@@ -29,7 +29,7 @@ func TestCheckKillsGrandchildrenOnTimeout(t *testing.T) {
 		[]string{"PATH=" + dir},
 	)
 
-	if results[0].Status != StatusBroken {
+	if results[0].Status != StatusTimeout {
 		t.Fatalf("expected a timeout, got %+v", results[0])
 	}
 

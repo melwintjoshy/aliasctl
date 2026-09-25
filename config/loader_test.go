@@ -75,6 +75,7 @@ tools:
   mytool:
     version: "2.1"
     check: "mytool version --short"
+    timeout: 20s
 `)
 
 	cfg, err := Load(path)
@@ -85,7 +86,7 @@ tools:
 	expected := map[string]ToolSpec{
 		"go":      {Version: "1.20"},
 		"kubectl": {Version: ">=1.29"},
-		"mytool":  {Version: "2.1", Check: "mytool version --short"},
+		"mytool":  {Version: "2.1", Check: "mytool version --short", Timeout: "20s"},
 	}
 
 	if !reflect.DeepEqual(cfg.Tools, expected) {

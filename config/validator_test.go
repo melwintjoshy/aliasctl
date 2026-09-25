@@ -222,6 +222,20 @@ func TestValidateTools(t *testing.T) {
 			tools:   map[string]ToolSpec{"-go": {Version: "1"}},
 			wantErr: `invalid tool name: "-go"`,
 		},
+		{
+			name:  "timeout",
+			tools: map[string]ToolSpec{"swift": {Version: "*", Timeout: "20s"}},
+		},
+		{
+			name:    "bad timeout",
+			tools:   map[string]ToolSpec{"swift": {Version: "*", Timeout: "20"}},
+			wantErr: `invalid tool "swift": invalid timeout "20", use a duration like 10s`,
+		},
+		{
+			name:    "zero timeout",
+			tools:   map[string]ToolSpec{"swift": {Version: "*", Timeout: "0s"}},
+			wantErr: `invalid tool "swift": timeout "0s" must be positive`,
+		},
 	}
 
 	for _, tt := range tests {

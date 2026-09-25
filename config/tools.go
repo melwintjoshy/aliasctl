@@ -6,10 +6,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ToolSpec is a required tool: a version rule and an optional command that prints its version.
+// ToolSpec is a required tool: a version rule, an optional command that prints its version
+// and an optional time limit for it.
 type ToolSpec struct {
 	Version string `yaml:"version"`
 	Check   string `yaml:"check"`
+	Timeout string `yaml:"timeout"`
 }
 
 // UnmarshalYAML accepts the short form `go: "1.22"` as well as a mapping.
@@ -26,7 +28,9 @@ func (s *ToolSpec) UnmarshalYAML(node *yaml.Node) error {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i]
 
-		if key.Value != "version" && key.Value != "check" {
+		switch key.Value {
+		case "version", "check", "timeout":
+		default:
 			return fmt.Errorf("line %d: field %s not found in tool", key.Line, key.Value)
 		}
 	}
