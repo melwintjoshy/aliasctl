@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -20,8 +23,11 @@ func Load(path string) (*Config, error) {
 
 	var cfg Config
 
-	err = yaml.Unmarshal(data, &cfg)
-	if err != nil {
+	// reject unknown keys so a typo like "alias:" fails instead of being ignored
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+
+	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 

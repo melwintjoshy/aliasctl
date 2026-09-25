@@ -12,8 +12,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("name is required")
 	}
 
-	if len(c.Aliases) == 0 {
-		return fmt.Errorf("at least one alias is required")
+	if len(c.Aliases) == 0 && len(c.Functions) == 0 {
+		return fmt.Errorf("at least one alias or function is required")
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(c.Aliases)) {
@@ -24,6 +24,10 @@ func (c *Config) Validate() error {
 	for _, name := range slices.Sorted(maps.Keys(c.Functions)) {
 		if !isValidIdentifier(name) {
 			return fmt.Errorf("invalid function name: %q", name)
+		}
+
+		if _, ok := c.Aliases[name]; ok {
+			return fmt.Errorf("%q is defined as both an alias and a function", name)
 		}
 	}
 
@@ -36,12 +40,15 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+var (
+	identifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	aliasNamePattern  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+)
+
 func isValidIdentifier(name string) bool {
-	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_]*$`, name)
-	return matched
+	return identifierPattern.MatchString(name)
 }
 
 func isValidAliasName(name string) bool {
-	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_-]*$`, name)
-	return matched
+	return aliasNamePattern.MatchString(name)
 }

@@ -37,7 +37,7 @@ func TestValidateRequiresAlias(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 
-	expected := "at least one alias is required"
+	expected := "at least one alias or function is required"
 
 	if err.Error() != expected {
 		t.Fatalf(
@@ -124,5 +124,41 @@ func TestValidateRejectsInvalidVariableName(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected invalid variable name error")
+	}
+}
+
+func TestValidateAcceptsFunctionsOnly(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Functions: map[string]string{
+			"deploy": "echo deploy",
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRejectsAliasFunctionCollision(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Aliases: map[string]string{
+			"deploy": "echo alias",
+		},
+		Functions: map[string]string{
+			"deploy": "echo function",
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+
+	expected := `"deploy" is defined as both an alias and a function`
+
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}
 }
