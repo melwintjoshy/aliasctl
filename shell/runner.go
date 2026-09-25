@@ -25,15 +25,19 @@ func RunBash(env *resolver.Environment) error {
 
 	rcPath := file.Name()
 
-	defer os.Remove(rcPath)
+	defer func() {
+		file.Close()
+		os.Remove(rcPath)
+	}()
 
 	// Write our generated environment into the rc file.
 	if _, err := file.WriteString(script); err != nil {
-		file.Close()
 		return fmt.Errorf("failed to write rc file: %w", err)
 	}
 
-	file.Close()
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close rc file: %w", err)
+	}
 
 	// Start interactive Bash using our temporary rc file.
 	cmd := exec.Command(

@@ -92,3 +92,37 @@ func TestValidateAcceptsValidFunctionName(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidateAcceptsValidVariableName(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Variables: map[string]string{
+			"NAMESPACE":     "app-prod",
+			"ENVIRONMENT_2": "development",
+		},
+		Aliases: map[string]string{
+			"hello": "echo hello",
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidVariableName(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Variables: map[string]string{
+			"BAD-NAME": "value",
+		},
+		Aliases: map[string]string{
+			"hello": "echo hello",
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected invalid variable name error")
+	}
+}
