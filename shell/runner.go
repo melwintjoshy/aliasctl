@@ -153,12 +153,13 @@ func runPlain(env *resolver.Environment, args []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	cmd.Env = buildEnvironment(env)
+	cmd.Env = BuildEnvironment(env)
 
 	return cmd.Run()
 }
 
-func buildEnvironment(env *resolver.Environment) []string {
+// BuildEnvironment is the process environment with the project's variables applied.
+func BuildEnvironment(env *resolver.Environment) []string {
 	environment := setEnvironmentVariable(
 		unsetEnvironmentVariable(os.Environ(), hookEnvironmentVariable),
 		activeEnvironmentVariable,

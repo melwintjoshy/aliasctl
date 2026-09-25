@@ -62,7 +62,7 @@ func TestRunCommandPreservesEnvironment(t *testing.T) {
 
 	cmd := exec.Command("sh", "-c", "test -n \"$PATH\"")
 
-	cmd.Env = buildEnvironment(env)
+	cmd.Env = BuildEnvironment(env)
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("PATH was not preserved: %v", err)
@@ -86,7 +86,7 @@ func TestRunCommandArguments(t *testing.T) {
 		"hello world",
 	)
 
-	cmd.Env = buildEnvironment(env)
+	cmd.Env = BuildEnvironment(env)
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("argument was not passed correctly: %v", err)
@@ -114,7 +114,7 @@ func TestBuildEnvironmentAddsAliasCtlVariables(t *testing.T) {
 		},
 	}
 
-	environment := buildEnvironment(env)
+	environment := BuildEnvironment(env)
 
 	found := false
 
@@ -474,7 +474,7 @@ func TestStartAllowedFromHookLoadedEnvironment(t *testing.T) {
 func TestChildEnvironmentDropsHookMarker(t *testing.T) {
 	t.Setenv("ALIASCTL_HOOK", "1")
 
-	for _, entry := range buildEnvironment(&resolver.Environment{Name: "demo"}) {
+	for _, entry := range BuildEnvironment(&resolver.Environment{Name: "demo"}) {
 		if strings.HasPrefix(entry, "ALIASCTL_HOOK=") {
 			t.Fatal("ALIASCTL_HOOK leaked into the child environment")
 		}

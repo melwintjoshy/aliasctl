@@ -1,0 +1,172 @@
+package tools
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/melwintjoshy/aliasctl/resolver"
+	"github.com/melwintjoshy/aliasctl/versions"
+)
+
+type Status string
+
+const (
+	StatusOK       Status = "ok"
+	StatusMissing  Status = "missing"
+	StatusBroken   Status = "broken"
+	StatusMismatch Status = "mismatch"
+)
+
+// Result is what one tool probe found; Found is nil when no version could be read.
+type Result struct {
+	Name   string
+	Rule   string
+	Path   string
+	Found  versions.Version
+	Status Status
+	Detail string
+}
+
+const DefaultTimeout = 5 * time.Second
+
+type Checker struct {
+	Timeout time.Duration
+}
+
+// Check probes every tool in parallel with the default timeout.
+func Check(ctx context.Context, requirements []resolver.ToolRequirement, environ []string) []Result {
+	return Checker{Timeout: DefaultTimeout}.Check(ctx, requirements, environ)
+}
+
+func (c Checker) Check(ctx context.Context, requirements []resolver.ToolRequirement, environ []string) []Result {
+	results := make([]Result, len(requirements))
+
+	var wg sync.WaitGroup
+
+	for i, requirement := range requirements {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			results[i] = c.checkOne(ctx, requirement, environ)
+		}()
+	}
+
+	wg.Wait()
+
+	slices.SortFunc(results, func(a, b Result) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return results
+}
+
+func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirement, environ []string) Result {
+	result := Result{Name: requirement.Name, Rule: requirement.Rule}
+
+	constraint, err := versions.ParseConstraint(requirement.Rule)
+	if err != nil {
+		result.Status, result.Detail = StatusMismatch, err.Error()
+		return result
+	}
+
+	path, ok := findExecutable(requirement.Check.Name, environ)
+	if !ok {
+		result.Status = StatusMissing
+		return result
+	}
+
+	result.Path = path
+
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, path, requirement.Check.Args...)
+	cmd.Env = environ
+
+	// stops a child that keeps the output pipe open from outliving the timeout
+	cmd.WaitDelay = time.Second
+
+	// java -version prints to stderr, so both streams are read
+	output, err := cmd.CombinedOutput()
+
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		result.Status, result.Detail = StatusBroken, fmt.Sprintf("timed out after %s", c.Timeout)
+		return result
+
+	case err != nil:
+		result.Status, result.Detail = StatusBroken, firstLine(output, err.Error())
+		return result
+	}
+
+	found, ok := versions.Parse(string(output))
+	if !ok {
+		result.Status, result.Detail = StatusBroken, "no version in output: "+firstLine(output, "(empty)")
+		return result
+	}
+
+	result.Found = found
+	result.Status = StatusOK
+
+	if !constraint.Match(found) {
+		result.Status = StatusMismatch
+	}
+
+	return result
+}
+
+// uses the PATH from environ, not aliasctl's own, so project variables apply
+func findExecutable(name string, environ []string) (string, bool) {
+	if strings.Contains(name, "/") {
+		return name, isExecutable(name)
+	}
+
+	for _, dir := range filepath.SplitList(environValue(environ, "PATH")) {
+		if dir == "" {
+			dir = "."
+		}
+
+		path := filepath.Join(dir, name)
+
+		if isExecutable(path) {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+
+	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0
+}
+
+func environValue(environ []string, key string) string {
+	for i := len(environ) - 1; i >= 0; i-- {
+		if value, ok := strings.CutPrefix(environ[i], key+"="); ok {
+			return value
+		}
+	}
+
+	return ""
+}
+
+func firstLine(output []byte, fallback string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n")
+
+	if line == "" {
+		return fallback
+	}
+
+	return line
+}

@@ -1,0 +1,150 @@
+package tools
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/melwintjoshy/aliasctl/resolver"
+	"github.com/melwintjoshy/aliasctl/versions"
+)
+
+// writes a fake tool as a tiny sh script into dir
+func writeTool(t *testing.T, dir, name, body string) {
+	t.Helper()
+
+	script := "#!/bin/sh\n" + body + "\n"
+
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func requirement(name, rule string, args ...string) resolver.ToolRequirement {
+	return resolver.ToolRequirement{
+		Name:  name,
+		Rule:  rule,
+		Check: resolver.Command{Name: name, Args: args},
+	}
+}
+
+func TestCheckStatuses(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTool(t, dir, "good", `echo "good version v1.22.4"`)
+	writeTool(t, dir, "old", `echo "old 1.28.1"`)
+	writeTool(t, dir, "failing", `echo "Unable to locate a Java Runtime." >&2; exit 1`)
+	writeTool(t, dir, "silent", `echo "no digits here"`)
+	writeTool(t, dir, "stderr", `echo "openjdk version 21.0.2" >&2`)
+
+	// not executable, so it counts as missing
+	if err := os.WriteFile(filepath.Join(dir, "noexec"), []byte("#!/bin/sh\necho 1.0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	requirements := []resolver.ToolRequirement{
+		requirement("old", ">=1.29"),
+		requirement("good", "1.22", "--version"),
+		requirement("absent", "*"),
+		requirement("failing", "*"),
+		requirement("silent", "*"),
+		requirement("stderr", "21"),
+		requirement("noexec", "*"),
+	}
+
+	results := Check(context.Background(), requirements, []string{"PATH=" + dir})
+
+	got := make(map[string]Status)
+
+	for _, result := range results {
+		got[result.Name] = result.Status
+	}
+
+	expected := map[string]Status{
+		"absent":  StatusMissing,
+		"failing": StatusBroken,
+		"good":    StatusOK,
+		"noexec":  StatusMissing,
+		"old":     StatusMismatch,
+		"silent":  StatusBroken,
+		"stderr":  StatusOK,
+	}
+
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+
+	for i := 1; i < len(results); i++ {
+		if results[i-1].Name > results[i].Name {
+			t.Fatalf("results are not sorted: %s before %s", results[i-1].Name, results[i].Name)
+		}
+	}
+}
+
+func TestCheckReportsDetails(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTool(t, dir, "good", `echo "v1.22.4"`)
+	writeTool(t, dir, "failing", `echo "Unable to locate a Java Runtime." >&2; exit 1`)
+
+	results := Check(
+		context.Background(),
+		[]resolver.ToolRequirement{requirement("failing", "*"), requirement("good", "1.22")},
+		[]string{"PATH=" + dir},
+	)
+
+	if results[0].Detail != "Unable to locate a Java Runtime." {
+		t.Fatalf("unexpected detail %q", results[0].Detail)
+	}
+
+	if results[1].Path != filepath.Join(dir, "good") {
+		t.Fatalf("unexpected path %q", results[1].Path)
+	}
+
+	if !reflect.DeepEqual(results[1].Found, versions.Version{1, 22, 4}) {
+		t.Fatalf("unexpected version %v", results[1].Found)
+	}
+}
+
+func TestCheckTimesOut(t *testing.T) {
+	dir := t.TempDir()
+
+	// absolute path since the fake PATH holds only the temp dir
+	writeTool(t, dir, "slow", "/bin/sleep 5; echo 1.0")
+
+	start := time.Now()
+
+	results := Checker{Timeout: 200 * time.Millisecond}.Check(
+		context.Background(),
+		[]resolver.ToolRequirement{requirement("slow", "*")},
+		[]string{"PATH=" + dir},
+	)
+
+	if results[0].Status != StatusBroken || results[0].Detail != "timed out after 200ms" {
+		t.Fatalf("expected timeout, got %+v", results[0])
+	}
+
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("timeout was not enforced, took %s", time.Since(start))
+	}
+}
+
+func TestCheckUsesProjectEnvironment(t *testing.T) {
+	dir := t.TempDir()
+
+	// the probe must see project variables, e.g. a KUBECONFIG the tool reads
+	writeTool(t, dir, "ctx", `echo "ctx $TOOL_VERSION"`)
+
+	results := Check(
+		context.Background(),
+		[]resolver.ToolRequirement{requirement("ctx", "3.1")},
+		[]string{"PATH=" + dir, "TOOL_VERSION=3.1.0"},
+	)
+
+	if results[0].Status != StatusOK {
+		t.Fatalf("expected project variable to reach the probe, got %+v", results[0])
+	}
+}
