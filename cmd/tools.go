@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -82,9 +84,13 @@ var toolsCheckCmd = &cobra.Command{
 }
 
 func checkTools(env *resolver.Environment) []tools.Result {
+	// checks run in their own process groups, so ctrl-c has to reach them through the context
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	checker := tools.Checker{Timeout: tools.DefaultTimeout, Dir: env.Dir}
 
-	return checker.Check(context.Background(), env.Tools, shell.BuildEnvironment(env))
+	return checker.Check(ctx, env.Tools, shell.BuildEnvironment(env))
 }
 
 // warns without blocking, a wrong kubectl shouldn't stop someone opening the shell

@@ -96,6 +96,8 @@ func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirem
 	cmd.Env = environ
 	cmd.Dir = c.Dir
 
+	isolateProcessGroup(cmd)
+
 	// stops a child that keeps the output pipe open from outliving the timeout
 	cmd.WaitDelay = time.Second
 
