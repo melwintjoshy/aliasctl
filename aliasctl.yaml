@@ -20,3 +20,9 @@ functions:
   hello: |
     echo "hello from AliasCtl"
     echo "bye from AliasCtl"
+
+# tools the aliases above rely on; run "aliasctl tools check"
+# tools:
+#   kubectl: ">=1.29"
+#   docker: "*"
+#   go: "1.22"

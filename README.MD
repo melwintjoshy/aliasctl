@@ -94,6 +94,7 @@ aliasctl run        Run a command with the environment
 aliasctl export     Print the environment as shell code for eval
 aliasctl hook       Print a snippet that auto-activates on cd
 aliasctl allow      Trust a configuration for auto-activation
+aliasctl tools check  Check installed tools against the configured versions
 ```
 
 `aliasctl run` also understands the configuration's names: an alias runs its command directly with any extra arguments appended, and a function runs in Bash with its arguments as `$1`, `$2`, …
@@ -108,6 +109,34 @@ Use a specific configuration:
 ```bash
 aliasctl --config dev.yaml shell
 ```
+
+## Tools
+
+Declare the tools the project's commands need, and AliasCtl checks the machine against them:
+
+```yaml
+tools:
+  go: "1.22"                # any 1.22.x
+  kubectl: ">=1.29 <1.31"   # every rule must hold
+  jq: "*"                   # only needs to be installed
+  mytool:
+    version: "2.1"
+    check: "mytool version --short"
+```
+
+```text
+$ aliasctl tools check
+TOOL       WANT          FOUND   STATUS    PATH
+go         1.22          1.22.4  ok        /opt/homebrew/bin/go
+kubectl    >=1.29 <1.31  1.28.1  mismatch  /usr/local/bin/kubectl
+terraform  >=1.6         -       missing   -
+```
+
+- **Rules:** `*` (any version), a bare version that pins only the parts it names (`1.22` matches `1.22.x`, `1.22.4` is exact), or `>=`, `>`, `<=`, `<`, `=` comparisons separated by spaces.
+- **How the version is read:** `go`, `kubectl`, `helm` and `java` have built-in checks. Every other tool runs `<name> --version`, and the first version number in the output is used. Use `check:` to override it; it follows the same rules as an alias (no shell syntax, `${VAR}` allowed).
+- **Statuses:** `ok`, `missing` (not on `PATH`), `mismatch`, or `broken` (installed but exits with an error, prints no version, or takes longer than 5 seconds).
+- **Where checks run:** `aliasctl tools check` exits non-zero on any problem, so it can gate CI. `aliasctl shell` prints a warning and opens anyway. `run`, `validate` and auto-activation never run checks, so scripts and prompts stay fast.
+- AliasCtl only checks tools; it does not install them yet.
 
 ## Auto-activation
 
