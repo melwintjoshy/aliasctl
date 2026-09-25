@@ -121,21 +121,25 @@ tools:
   jq: "*"                   # only needs to be installed
   mytool:
     version: "2.1"
-    check: "mytool version --short"
+    check: "./bin/mytool version --short"
+  swift:
+    version: "*"
+    timeout: 20s            # slow to start, so give it longer than the default 5s
 ```
 
 ```text
 $ aliasctl tools check
-TOOL       WANT          FOUND   STATUS    PATH
+TOOL       WANT          FOUND   STATUS    PATH                    NOTE
 go         1.22          1.22.4  ok        /opt/homebrew/bin/go
 kubectl    >=1.29 <1.31  1.28.1  mismatch  /usr/local/bin/kubectl
 terraform  >=1.6         -       missing   -
+java       *             -       broken    /usr/bin/java           Unable to locate a Java Runtime.
 ```
 
-- **Rules:** `*` (any version), a bare version that pins only the parts it names (`1.22` matches `1.22.x`, `1.22.4` is exact), or `>=`, `>`, `<=`, `<`, `=` comparisons separated by spaces.
-- **How the version is read:** `go`, `kubectl`, `helm` and `java` have built-in checks. Every other tool runs `<name> --version`, and the first version number in the output is used. Use `check:` to override it; it follows the same rules as an alias (no shell syntax, `${VAR}` allowed).
-- **Statuses:** `ok`, `missing` (not on `PATH`), `mismatch`, or `broken` (installed but exits with an error, prints no version, or takes longer than 5 seconds).
-- **Where checks run:** `aliasctl tools check` exits non-zero on any problem, so it can gate CI. `aliasctl shell` prints a warning and opens anyway. `run`, `validate` and auto-activation never run checks, so scripts and prompts stay fast.
+- **Rules:** `*` (any version), a bare version that pins only the parts it names (`1.22` matches `1.22.x`, `1.22.4` is exact), or `>=`, `>`, `<=`, `<`, `=` comparisons separated by spaces. A comparison sees missing parts as zero, so `=1.22` means exactly `1.22.0`; use the bare form for a prefix match. A leading `v` is ignored, so `>=v1.29` works. Quote every rule: `*` and `>` are YAML syntax on their own.
+- **How the version is read:** `go`, `kubectl`, `helm` and `java` have built-in checks. Every other tool runs `<name> --version`, and the first version number in the output is used. Use `check:` when that is the wrong number (`swift --version` prints the driver version first) or the flag differs; it follows the same rules as an alias (no shell syntax, `${VAR}` allowed), and a relative path is taken from the directory holding `aliasctl.yaml`. Java 8 reports itself as `1.8.0`, so its rule is `1.8`, not `8`.
+- **Statuses:** `ok`, `missing` (not on `PATH`), `mismatch`, `broken` (installed but exits with an error or prints no version), or `timeout` (no answer within 5 seconds, or the tool's own `timeout:`).
+- **Where checks run:** `aliasctl tools check` exits non-zero on any problem, so it can gate CI. `aliasctl shell` prints a warning and opens anyway, after waiting for the checks, so a hanging tool delays the prompt by its timeout. `run`, `validate` and auto-activation never run checks, so scripts and prompts stay fast.
 - AliasCtl only checks tools; it does not install them yet.
 
 ## Auto-activation
