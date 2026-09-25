@@ -139,3 +139,36 @@ func TestWarnToolProblemsQuietWhenAllOK(t *testing.T) {
 		t.Fatalf("expected no output, got %q", output.String())
 	}
 }
+
+func TestToolsCheckFromSubdirectory(t *testing.T) {
+	project := t.TempDir()
+
+	for _, dir := range []string{"bin", "sub"} {
+		if err := os.Mkdir(filepath.Join(project, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	script := "#!/bin/sh\necho \"mytool 2.1.0\"\n"
+
+	if err := os.WriteFile(filepath.Join(project, "bin", "mytool"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	config := "name: test\naliases:\n  k: kubectl\ntools:\n  mytool: { version: \"2.1\", check: \"./bin/mytool --version\" }\n"
+
+	if err := os.WriteFile(filepath.Join(project, "aliasctl.yaml"), []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(filepath.Join(project, "sub"))
+
+	output, err := runRoot(t, "tools", "check")
+	if err != nil {
+		t.Fatalf("expected the relative check to resolve against the config directory: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(output, "ok") {
+		t.Fatalf("unexpected output:\n%s", output)
+	}
+}

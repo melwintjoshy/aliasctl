@@ -39,9 +39,12 @@ const DefaultTimeout = 5 * time.Second
 
 type Checker struct {
 	Timeout time.Duration
+
+	// checks run here and relative check paths resolve against it; "" means the working directory
+	Dir string
 }
 
-// Check probes every tool in parallel with the default timeout.
+// Check probes every tool in parallel with the default timeout, from the working directory.
 func Check(ctx context.Context, requirements []resolver.ToolRequirement, environ []string) []Result {
 	return Checker{Timeout: DefaultTimeout}.Check(ctx, requirements, environ)
 }
@@ -78,7 +81,7 @@ func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirem
 		return result
 	}
 
-	path, ok := findExecutable(requirement.Check.Name, environ)
+	path, ok := c.findExecutable(requirement.Check.Name, environ)
 	if !ok {
 		result.Status = StatusMissing
 		return result
@@ -91,6 +94,7 @@ func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirem
 
 	cmd := exec.CommandContext(ctx, path, requirement.Check.Args...)
 	cmd.Env = environ
+	cmd.Dir = c.Dir
 
 	// stops a child that keeps the output pipe open from outliving the timeout
 	cmd.WaitDelay = time.Second
@@ -125,9 +129,10 @@ func (c Checker) checkOne(ctx context.Context, requirement resolver.ToolRequirem
 }
 
 // uses the PATH from environ, not aliasctl's own, so project variables apply
-func findExecutable(name string, environ []string) (string, bool) {
+func (c Checker) findExecutable(name string, environ []string) (string, bool) {
 	if strings.Contains(name, "/") {
-		return name, isExecutable(name)
+		path := c.resolve(name)
+		return path, isExecutable(path)
 	}
 
 	for _, dir := range filepath.SplitList(environValue(environ, "PATH")) {
@@ -135,7 +140,7 @@ func findExecutable(name string, environ []string) (string, bool) {
 			dir = "."
 		}
 
-		path := filepath.Join(dir, name)
+		path := c.resolve(filepath.Join(dir, name))
 
 		if isExecutable(path) {
 			return path, true
@@ -143,6 +148,23 @@ func findExecutable(name string, environ []string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// a bare name would make exec search PATH again, so every result is explicitly relative or absolute
+func (c Checker) resolve(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+
+	if c.Dir != "" {
+		return filepath.Join(c.Dir, path)
+	}
+
+	if !strings.Contains(path, "/") {
+		return "./" + path
+	}
+
+	return path
 }
 
 func isExecutable(path string) bool {

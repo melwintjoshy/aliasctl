@@ -82,7 +82,9 @@ var toolsCheckCmd = &cobra.Command{
 }
 
 func checkTools(env *resolver.Environment) []tools.Result {
-	return tools.Check(context.Background(), env.Tools, shell.BuildEnvironment(env))
+	checker := tools.Checker{Timeout: tools.DefaultTimeout, Dir: env.Dir}
+
+	return checker.Check(context.Background(), env.Tools, shell.BuildEnvironment(env))
 }
 
 // warns without blocking, a wrong kubectl shouldn't stop someone opening the shell

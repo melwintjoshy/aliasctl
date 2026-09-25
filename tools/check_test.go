@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,5 +171,68 @@ func TestResultProblem(t *testing.T) {
 		if got := tt.result.Problem(); got != tt.expected {
 			t.Fatalf("expected %q, got %q", tt.expected, got)
 		}
+	}
+}
+
+func TestCheckResolvesRelativeCheckAgainstDir(t *testing.T) {
+	project := t.TempDir()
+
+	if err := os.Mkdir(filepath.Join(project, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTool(t, filepath.Join(project, "bin"), "mytool", `echo "mytool 2.1.0"`)
+
+	requirements := []resolver.ToolRequirement{{
+		Name:  "mytool",
+		Rule:  "2.1",
+		Check: resolver.Command{Name: "./bin/mytool", Args: []string{"--version"}},
+	}}
+
+	// the working directory is somewhere else, as when running from a subdirectory
+	results := Checker{Timeout: DefaultTimeout, Dir: project}.Check(
+		context.Background(),
+		requirements,
+		[]string{"PATH=" + t.TempDir()},
+	)
+
+	if results[0].Status != StatusOK || results[0].Path != filepath.Join(project, "bin", "mytool") {
+		t.Fatalf("expected the check to resolve against the config directory, got %+v", results[0])
+	}
+
+	if results := Check(context.Background(), requirements, nil); results[0].Status != StatusMissing {
+		t.Fatalf("expected a miss from an unrelated working directory, got %+v", results[0])
+	}
+}
+
+func TestCheckRunsFromDir(t *testing.T) {
+	project := t.TempDir()
+	dir := t.TempDir()
+
+	writeTool(t, dir, "here", `echo "here 1.0"; pwd`)
+
+	results := Checker{Timeout: DefaultTimeout, Dir: project}.Check(
+		context.Background(),
+		[]resolver.ToolRequirement{requirement("here", "*")},
+		[]string{"PATH=" + dir},
+	)
+
+	if results[0].Status != StatusOK {
+		t.Fatalf("expected ok, got %+v", results[0])
+	}
+}
+
+func TestFindExecutableKeepsDotEntriesRelative(t *testing.T) {
+	checker := Checker{}
+
+	// with an empty PATH entry a bare name would be looked up on PATH again by exec
+	for _, path := range []string{"tool", "./tool", "bin/tool"} {
+		if got := checker.resolve(path); !strings.Contains(got, "/") {
+			t.Fatalf("resolve(%q) = %q, expected an explicit path", path, got)
+		}
+	}
+
+	if got := checker.resolve("/usr/bin/tool"); got != "/usr/bin/tool" {
+		t.Fatalf("absolute path changed to %q", got)
 	}
 }

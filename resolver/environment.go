@@ -1,6 +1,9 @@
 package resolver
 
 type Environment struct {
+	// directory holding aliasctl.yaml, "" when built without a file
+	Dir string
+
 	Name      string
 	Variables map[string]string
 	Aliases   map[string]Command
