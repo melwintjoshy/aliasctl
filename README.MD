@@ -63,6 +63,8 @@ Exit the shell and the parent environment remains unchanged.
 
 `${NAME}` in an alias is replaced with the value from `variables`, falling back to the process environment (for example `${HOME}`). An undefined name is a configuration error. Substituted values are not expanded again, and each argument keeps its boundaries, so values containing spaces or `;` are passed as plain text.
 
+Quoting follows POSIX rules: a backslash is literal inside single quotes, and inside double quotes it only escapes `$`, `` ` ``, `"`, `\` and newline. So `printf "[%s]\n"` keeps its `\n`. Earlier versions dropped every backslash, which turned `"\n"` into `n`.
+
 ## Commands
 
 ```text
