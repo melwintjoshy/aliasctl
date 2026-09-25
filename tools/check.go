@@ -170,3 +170,21 @@ func firstLine(output []byte, fallback string) string {
 
 	return line
 }
+
+// Problem is a one-line description of what is wrong, or "" when the tool is ok.
+func (r Result) Problem() string {
+	switch r.Status {
+	case StatusMissing:
+		return fmt.Sprintf("%s is not installed (want %q)", r.Name, r.Rule)
+	case StatusMismatch:
+		if r.Found == nil {
+			return fmt.Sprintf("%s: %s", r.Name, r.Detail)
+		}
+
+		return fmt.Sprintf("%s %s does not match %q", r.Name, r.Found, r.Rule)
+	case StatusBroken:
+		return fmt.Sprintf("%s is installed but not working: %s", r.Name, r.Detail)
+	}
+
+	return ""
+}

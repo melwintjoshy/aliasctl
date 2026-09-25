@@ -148,3 +148,27 @@ func TestCheckUsesProjectEnvironment(t *testing.T) {
 		t.Fatalf("expected project variable to reach the probe, got %+v", results[0])
 	}
 }
+
+func TestResultProblem(t *testing.T) {
+	tests := []struct {
+		result   Result
+		expected string
+	}{
+		{Result{Name: "go", Status: StatusOK}, ""},
+		{Result{Name: "tf", Rule: ">=1.6", Status: StatusMissing}, `tf is not installed (want ">=1.6")`},
+		{
+			Result{Name: "kubectl", Rule: "<1.30", Found: versions.Version{1, 36, 4}, Status: StatusMismatch},
+			`kubectl 1.36.4 does not match "<1.30"`,
+		},
+		{
+			Result{Name: "java", Status: StatusBroken, Detail: "Unable to locate a Java Runtime."},
+			"java is installed but not working: Unable to locate a Java Runtime.",
+		},
+	}
+
+	for _, tt := range tests {
+		if got := tt.result.Problem(); got != tt.expected {
+			t.Fatalf("expected %q, got %q", tt.expected, got)
+		}
+	}
+}
