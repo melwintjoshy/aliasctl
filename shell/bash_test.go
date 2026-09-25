@@ -1,6 +1,8 @@
 package shell
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -48,5 +50,216 @@ func TestBashRenderer(t *testing.T) {
 			expectedAlias,
 			output,
 		)
+	}
+}
+
+func TestBashRendererQuotesVariableValue(t *testing.T) {
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"VALUE": `hello'; echo MALICIOUS; echo '`,
+		},
+	}
+
+	renderer := BashRenderer{}
+
+	output, err := renderer.Render(env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := `export VALUE='hello'\''; echo MALICIOUS; echo '\''`
+
+	if !strings.Contains(output, expected) {
+		t.Fatalf(
+			"expected output to contain %q\nGot:\n%s",
+			expected,
+			output,
+		)
+	}
+}
+
+func TestBashRendererQuotesAliasCommand(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"danger": {
+				Name: "echo",
+				Args: []string{
+					`hello'; echo MALICIOUS; echo '`,
+				},
+			},
+		},
+	}
+
+	renderer := BashRenderer{}
+
+	output, err := renderer.Render(env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := `alias danger='echo hello'\''; echo MALICIOUS; echo '\''`
+
+	if !strings.Contains(output, expected) {
+		t.Fatalf(
+			"expected output to contain %q\nGot:\n%s",
+			expected,
+			output,
+		)
+	}
+}
+
+func TestBashRendererDoesNotExecuteVariableValue(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	marker, err := os.CreateTemp("", "aliasctl-security-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	markerPath := marker.Name()
+	marker.Close()
+	os.Remove(markerPath)
+
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"VALUE": "hello; touch " + markerPath,
+		},
+	}
+
+	renderer := BashRenderer{}
+
+	script, err := renderer.Render(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		script,
+	)
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(markerPath); err == nil {
+		t.Fatal("variable value was interpreted as shell code")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected error checking marker: %v", err)
+	}
+}
+
+func TestBashRendererDoesNotExecuteAliasArgument(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	marker, err := os.CreateTemp("", "aliasctl-security-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	markerPath := marker.Name()
+	marker.Close()
+	os.Remove(markerPath)
+
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"danger": {
+				Name: "echo",
+				Args: []string{
+					"hello; touch " + markerPath,
+				},
+			},
+		},
+	}
+
+	renderer := BashRenderer{}
+
+	script, err := renderer.Render(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		script,
+	)
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(markerPath); err == nil {
+		t.Fatal("alias argument was interpreted as shell code")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected error checking marker: %v", err)
+	}
+}
+
+func TestBashRendererRendersFunctions(t *testing.T) {
+	renderer := BashRenderer{}
+
+	env := &resolver.Environment{
+		Functions: map[string]string{
+			"deploy": `echo "Building..."
+go build ./...
+`,
+		},
+	}
+
+	output, err := renderer.Render(env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := `deploy() {
+echo "Building..."
+go build ./...
+}
+`
+
+	if output != expected {
+		t.Fatalf("expected:\n%s\ngot:\n%s", expected, output)
+	}
+}
+
+func TestBashRendererFunctionExecutes(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	renderer := BashRenderer{}
+
+	env := &resolver.Environment{
+		Functions: map[string]string{
+			"hello": `echo "hello from function"`,
+		},
+	}
+
+	script, err := renderer.Render(env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		script+`hello`,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("function execution failed: %v", err)
+	}
+
+	expected := "hello from function\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
 	}
 }

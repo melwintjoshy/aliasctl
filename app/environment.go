@@ -14,7 +14,9 @@ func LoadEnvironment(configPath string) (*resolver.Environment, error) {
 		return nil, err
 	}
 
-	cfg, err := config.Load(resolvedPath)
+	loader := config.Loader{}
+
+	cfg, err := loader.Load(resolvedPath)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"could not load configuration: %w",

@@ -108,3 +108,73 @@ func TestResolveInvalidCommand(t *testing.T) {
 		t.Fatal("expected error for invalid command")
 	}
 }
+
+func TestResolveVariableWithShellCharacters(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+
+		Variables: map[string]string{
+			"VALUE": "hello; touch /tmp/marker",
+		},
+
+		Aliases: map[string]string{
+			"test": "echo ${VALUE}",
+		},
+	}
+
+	env, err := Resolve(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	command, ok := env.Alias("test")
+	if !ok {
+		t.Fatal("expected test alias to exist")
+	}
+
+	expected := Command{
+		Name: "echo",
+		Args: []string{
+			"hello;",
+			"touch",
+			"/tmp/marker",
+		},
+	}
+
+	if !reflect.DeepEqual(command, expected) {
+		t.Fatalf(
+			"expected %+v, got %+v",
+			expected,
+			command,
+		)
+	}
+}
+
+func TestResolveFunctions(t *testing.T) {
+	cfg := &config.Config{
+		Name: "test",
+		Functions: map[string]string{
+			"deploy": `echo "Building..."
+go build ./...
+`,
+		},
+	}
+
+	env, err := Resolve(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	body, ok := env.Functions["deploy"]
+	if !ok {
+		t.Fatal("expected deploy function")
+	}
+
+	expected := `echo "Building..."
+go build ./...
+`
+
+	if body != expected {
+		t.Fatalf("expected %q, got %q", expected, body)
+	}
+}

@@ -13,3 +13,10 @@ aliases:
   di: docker image ls
 
   read: cat
+
+  test: "go test ./..."
+
+functions:
+  hello: |
+    echo "hello from AliasCtl"
+    echo "bye from AliasCtl"

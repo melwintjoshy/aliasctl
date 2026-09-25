@@ -64,6 +64,30 @@ var inspectCmd = &cobra.Command{
 
 			fmt.Printf("%s → %s\n", name, value)
 		}
+		fmt.Println()
+
+		functionNames := make([]string, 0, len(env.Functions))
+
+		for name := range env.Functions {
+			functionNames = append(functionNames, name)
+		}
+
+		sort.Strings(functionNames)
+
+		fmt.Println("Functions")
+		fmt.Println("---------")
+
+		for _, name := range functionNames {
+			fmt.Println(name)
+
+			body := strings.TrimRight(env.Functions[name], "\n")
+
+			for _, line := range strings.Split(body, "\n") {
+				fmt.Printf("  %s\n", line)
+			}
+
+			fmt.Println()
+		}
 
 		return nil
 	},

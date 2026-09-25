@@ -36,6 +36,11 @@ func (r BashRenderer) Render(env *resolver.Environment) (string, error) {
 		)
 	}
 
+	for name, body := range env.Functions {
+		body = strings.TrimRight(body, "\n")
+		fmt.Fprintf(&output, "%s() {\n%s\n}\n", name, body)
+	}
+
 	return output.String(), nil
 }
 

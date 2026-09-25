@@ -62,3 +62,33 @@ func TestValidateRejectsInvalidAlias(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+func TestValidateRejectsInvalidFunctionName(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Functions: map[string]string{
+			"hello;rm": "echo hello",
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected invalid function name error")
+	}
+}
+
+func TestValidateAcceptsValidFunctionName(t *testing.T) {
+	cfg := &Config{
+		Name: "test",
+		Aliases: map[string]string{
+			"k": "kubectl",
+		},
+		Functions: map[string]string{
+			"deploy_prod": "echo deploy",
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

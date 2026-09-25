@@ -15,15 +15,20 @@ func (c *Config) Validate() error {
 	}
 
 	for name := range c.Aliases {
-		if !isValidAliasName(name) {
+		if !isValidName(name) {
 			return fmt.Errorf("invalid alias name: %q", name)
+		}
+	}
+	for name := range c.Functions {
+		if !isValidName(name) {
+			return fmt.Errorf("invalid function name: %q", name)
 		}
 	}
 
 	return nil
 }
 
-func isValidAliasName(name string) bool {
+func isValidName(name string) bool {
 	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_-]*$`, name)
 	return matched
 }

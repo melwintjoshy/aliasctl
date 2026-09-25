@@ -105,3 +105,53 @@ func TestRunCommandMissingCommand(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+func TestBuildEnvironmentAddsAliasCtlVariables(t *testing.T) {
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"ALIASCTL_TEST": "hello",
+		},
+	}
+
+	environment := buildEnvironment(env)
+
+	found := false
+
+	for _, entry := range environment {
+		if entry == "ALIASCTL_TEST=hello" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("expected ALIASCTL_TEST to be present")
+	}
+}
+
+func TestRunShellExecutesFunctions(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	env := &resolver.Environment{
+		Functions: map[string]string{
+			"hello": `echo "hello from function"`,
+		},
+	}
+
+	script, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cmd := exec.Command("bash", "-c", script+`hello`)
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("function execution failed: %v", err)
+	}
+
+	expected := "hello from function\n"
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+}

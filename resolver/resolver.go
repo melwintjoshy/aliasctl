@@ -12,10 +12,15 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 		Name:      cfg.Name,
 		Variables: make(map[string]string),
 		Aliases:   make(map[string]Command),
+		Functions: make(map[string]string),
 	}
 
 	for key, value := range cfg.Variables {
 		env.Variables[key] = value
+	}
+
+	for name, body := range cfg.Functions {
+		env.Functions[name] = body
 	}
 
 	for name, command := range cfg.Aliases {

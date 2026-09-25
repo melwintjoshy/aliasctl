@@ -10,6 +10,8 @@ import (
 
 const ConfigFileName = "aliasctl.yaml"
 
+type Loader struct{}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -50,4 +52,8 @@ func FindConfig() (string, error) {
 	}
 
 	return "", fmt.Errorf("%s not found", ConfigFileName)
+}
+
+func (Loader) Load(path string) (*Config, error) {
+	return Load(path)
 }
