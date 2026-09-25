@@ -53,6 +53,16 @@ deploy
 
 Exit the shell and the parent environment remains unchanged.
 
+### How the shell is built
+
+- Your `~/.bashrc` is loaded first, then the AliasCtl definitions, so project aliases and functions win on conflicts.
+- The prompt is prefixed with `(aliasctl:<name>)` and `ALIASCTL_ENV` is set to the environment name.
+- Running `aliasctl shell` inside an AliasCtl shell is refused; exit the current one first.
+
+### Variables in aliases
+
+`${NAME}` in an alias is replaced with the value from `variables`, falling back to the process environment (for example `${HOME}`). An undefined name is a configuration error. Substituted values are not expanded again, and each argument keeps its boundaries, so values containing spaces or `;` are passed as plain text.
+
 ## Commands
 
 ```text
@@ -61,6 +71,13 @@ aliasctl validate   Validate configuration
 aliasctl inspect    Inspect resolved environment
 aliasctl shell      Start temporary Bash environment
 aliasctl run        Run a command with the environment
+```
+
+`aliasctl run` also understands the configuration's names: an alias runs its command directly with any extra arguments appended, and a function runs in Bash with its arguments as `$1`, `$2`, …
+
+```bash
+aliasctl run kgp -o wide
+aliasctl run deploy
 ```
 
 Use a specific configuration:
@@ -76,6 +93,8 @@ YAML → Loader → Validator → Resolver → Environment → Bash → Temporar
 ```
 
 Aliases are internally resolved into structured commands, while functions remain shell code.
+
+Configuration is validated strictly: unknown keys, invalid names, and a name defined as both an alias and a function are rejected. At least one alias or function is required.
 
 ## Development
 
