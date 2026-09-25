@@ -48,7 +48,7 @@ var exportCmd = &cobra.Command{
 			return ErrReported
 		}
 
-		env, err := app.LoadEnvironment(absolutePath)
+		env, _, err := app.LoadEnvironment(absolutePath)
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
