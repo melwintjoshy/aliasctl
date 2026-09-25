@@ -22,17 +22,11 @@ func (r BashRenderer) Render(env *resolver.Environment) (string, error) {
 	}
 
 	for name, command := range env.Aliases {
-		value := command.Name
-
-		if len(command.Args) > 0 {
-			value += " " + strings.Join(command.Args, " ")
-		}
-
 		fmt.Fprintf(
 			&output,
 			"alias %s=%s\n",
 			name,
-			shellQuote(value),
+			shellQuote(aliasValue(command)),
 		)
 	}
 
@@ -42,6 +36,19 @@ func (r BashRenderer) Render(env *resolver.Environment) (string, error) {
 	}
 
 	return output.String(), nil
+}
+
+// bash re-parses alias values on use, so each token is quoted on its own
+func aliasValue(command resolver.Command) string {
+	tokens := make([]string, 0, len(command.Args)+1)
+
+	tokens = append(tokens, shellQuote(command.Name))
+
+	for _, arg := range command.Args {
+		tokens = append(tokens, shellQuote(arg))
+	}
+
+	return strings.Join(tokens, " ")
 }
 
 func shellQuote(value string) string {

@@ -34,7 +34,9 @@ func TestBashRenderer(t *testing.T) {
 	}
 
 	expectedVariable := "export NAMESPACE='app-prod'"
-	expectedAlias := "alias kgp='kubectl get pods -n app-prod'"
+	expectedAlias := "alias kgp=" + shellQuote(
+		"'kubectl' 'get' 'pods' '-n' 'app-prod'",
+	)
 
 	if !strings.Contains(output, expectedVariable) {
 		t.Fatalf(
@@ -97,7 +99,9 @@ func TestBashRendererQuotesAliasCommand(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := `alias danger='echo hello'\''; echo MALICIOUS; echo '\''`
+	expected := "alias danger=" + shellQuote(
+		"'echo' "+shellQuote(`hello'; echo MALICIOUS; echo '`),
+	)
 
 	if !strings.Contains(output, expected) {
 		t.Fatalf(
@@ -184,20 +188,65 @@ func TestBashRendererDoesNotExecuteAliasArgument(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// defining the alias is not enough, the injection only fires when it expands
 	cmd := exec.Command(
 		"bash",
 		"-c",
-		script,
+		"shopt -s expand_aliases\n"+script+"danger\n",
 	)
 
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.Output()
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := "hello; touch " + markerPath + "\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
 	}
 
 	if _, err := os.Stat(markerPath); err == nil {
 		t.Fatal("alias argument was interpreted as shell code")
 	} else if !os.IsNotExist(err) {
 		t.Fatalf("unexpected error checking marker: %v", err)
+	}
+}
+
+func TestBashRendererAliasKeepsArgumentBoundaries(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"show": {
+				Name: "printf",
+				Args: []string{`[%s]\n`, "-m", "initial commit"},
+			},
+		},
+	}
+
+	script, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		"shopt -s expand_aliases\n"+script+"show\n",
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("alias execution failed: %v", err)
+	}
+
+	expected := "[-m]\n[initial commit]\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
 	}
 }
 
