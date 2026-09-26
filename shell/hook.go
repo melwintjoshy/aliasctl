@@ -22,8 +22,8 @@ func checkHookShell(name string) error {
 }
 
 // RenderExport prints definitions for eval, plus ALIASCTL_UNLOAD to undo them and restore what they shadowed.
-// stampPath, when set, lets the hook notice edits to the config while it is loaded.
-func RenderExport(env *resolver.Environment, shellName, configPath, stampPath string) (string, error) {
+// stampPath, when set, lets the hook notice edits while loaded; allowedPath lets it notice a later allow.
+func RenderExport(env *resolver.Environment, shellName, configPath, stampPath, allowedPath string) (string, error) {
 	if err := checkHookShell(shellName); err != nil {
 		return "", err
 	}
@@ -36,11 +36,6 @@ func RenderExport(env *resolver.Environment, shellName, configPath, stampPath st
 	aliasNames := slices.Sorted(maps.Keys(env.Aliases))
 	functionNames := slices.Sorted(maps.Keys(env.Functions))
 	variableNames := slices.Sorted(maps.Keys(env.Variables))
-
-	// PATH is saved like any variable so leaving the project restores it
-	if len(env.PathPrepend) > 0 && !slices.Contains(variableNames, "PATH") {
-		variableNames = append(variableNames, "PATH")
-	}
 
 	// bash and zsh print reusable definitions with different flags
 	saveAlias, saveFunction := "alias %s", "declare -f %s"
@@ -87,6 +82,17 @@ func RenderExport(env *resolver.Environment, shellName, configPath, stampPath st
 		)
 	}
 
+	// only the tool dirs are taken out again, so a venv or nvm activated meanwhile survives leaving
+	if len(env.PathPrepend) > 0 {
+		output.WriteString(pathRemoveFunction)
+
+		for _, dir := range env.PathPrepend {
+			fmt.Fprintf(&output, "ALIASCTL_UNLOAD+=%s$'\\n'\n", shellQuote("__aliasctl_path_remove "+shellQuote(dir)))
+		}
+
+		output.WriteString("ALIASCTL_UNLOAD+=$'unset -f __aliasctl_path_remove\\n'\n")
+	}
+
 	output.WriteString("unset __aliasctl_saved\n")
 	output.WriteString(definitions)
 	output.WriteString(posixPathExport(env))
@@ -98,11 +104,41 @@ func RenderExport(env *resolver.Environment, shellName, configPath, stampPath st
 
 	if stampPath != "" {
 		fmt.Fprintf(&output, "__aliasctl_stamp=%s\n", shellQuote(stampPath))
-		fmt.Fprintf(&output, "ALIASCTL_UNLOAD+=%s$'\\n'\n", shellQuote("rm -f -- "+shellQuote(stampPath)))
+		fmt.Fprintf(&output, "__aliasctl_allowed=%s\n", shellQuote(allowedPath))
+		fmt.Fprintf(
+			&output,
+			"ALIASCTL_UNLOAD+=%s$'\\n'\n",
+			shellQuote("rm -f -- "+shellQuote(stampPath)+" "+shellQuote(stampPath+seenSuffix)),
+		)
 	}
 
 	return output.String(), nil
 }
+
+// matches app.SeenSuffix; the hook writes this marker next to the stamp after a failed reload
+const seenSuffix = ".seen"
+
+// drops the first occurrence of $1 from PATH by walking the entries, since ${//} patterns
+// would need escaping and a plain loop is the same in bash and zsh
+const pathRemoveFunction = `__aliasctl_path_remove() {
+  local __aliasctl_rest="$PATH:" __aliasctl_new="" __aliasctl_entry="" __aliasctl_first=1 __aliasctl_done=""
+  while [ -n "$__aliasctl_rest" ]; do
+    __aliasctl_entry="${__aliasctl_rest%%:*}"
+    __aliasctl_rest="${__aliasctl_rest#*:}"
+    if [ -z "$__aliasctl_done" ] && [ "$__aliasctl_entry" = "$1" ]; then
+      __aliasctl_done=1
+      continue
+    fi
+    if [ -n "$__aliasctl_first" ]; then
+      __aliasctl_new="$__aliasctl_entry"
+      __aliasctl_first=""
+    else
+      __aliasctl_new="$__aliasctl_new:$__aliasctl_entry"
+    fi
+  done
+  PATH="$__aliasctl_new"
+}
+`
 
 // the walk mirrors config.FindConfig so nothing is spawned on prompts outside a project
 const hookFunction = `__aliasctl_hook() {
@@ -132,14 +168,14 @@ const hookFunction = `__aliasctl_hook() {
       __PROMPT__="${__PROMPT__#"$__aliasctl_prefix"}"
     fi
 
-    unset ALIASCTL_ENV ALIASCTL_HOOK ALIASCTL_CONFIG ALIASCTL_UNLOAD __aliasctl_prefix __aliasctl_stamp __aliasctl_edit_hinted
+    unset ALIASCTL_ENV ALIASCTL_HOOK ALIASCTL_CONFIG ALIASCTL_UNLOAD __aliasctl_prefix __aliasctl_stamp __aliasctl_allowed __aliasctl_edit_hinted
 
     if [ -n "$__aliasctl_found" ]; then
       local __aliasctl_quiet=""
       [ "$__aliasctl_found" = "${__aliasctl_denied:-}" ] && __aliasctl_quiet="--quiet"
 
       local __aliasctl_export
-      if __aliasctl_export="$(__BINARY__ --config "$__aliasctl_found" export --shell __SHELL__ $__aliasctl_quiet)"; then
+      if __aliasctl_export="$(__BINARY__ --config "$__aliasctl_found" export --shell __SHELL__ --shell-pid $$ $__aliasctl_quiet)"; then
         eval "$__aliasctl_export"
         __aliasctl_denied=""
       else
@@ -149,16 +185,20 @@ const hookFunction = `__aliasctl_hook() {
 
   # edited in place: reload once trusted again, keep the old version until then
   # bash 3.2 compares whole seconds, so an edit in the same second as loading can be missed
-  elif [ -n "${__aliasctl_stamp:-}" ] && [ "$ALIASCTL_CONFIG" -nt "$__aliasctl_stamp" ]; then
+  elif [ -n "${__aliasctl_stamp:-}" ] && [ "$ALIASCTL_CONFIG" -nt "$__aliasctl_stamp" ] && __aliasctl_retry_due; then
     local __aliasctl_reload
-    if __aliasctl_reload="$(__BINARY__ --config "$ALIASCTL_CONFIG" export --shell __SHELL__ --quiet)"; then
+    if __aliasctl_reload="$(__BINARY__ --config "$ALIASCTL_CONFIG" export --shell __SHELL__ --shell-pid $$ --quiet)"; then
       eval "$ALIASCTL_UNLOAD"
       __PROMPT__="${__PROMPT__#"$__aliasctl_prefix"}"
       eval "$__aliasctl_reload"
       unset __aliasctl_edit_hinted
-    elif [ "${__aliasctl_edit_hinted:-}" != "$ALIASCTL_CONFIG" ]; then
-      printf 'aliasctl: %s changed; keeping the previous version, run "aliasctl allow" to load it\n' "$ALIASCTL_CONFIG" >&2
-      __aliasctl_edit_hinted="$ALIASCTL_CONFIG"
+    else
+      # the marker's mtime is when this attempt failed; a redirect updates it without forking
+      : >| "$__aliasctl_stamp.seen" 2>/dev/null
+      if [ "${__aliasctl_edit_hinted:-}" != "$ALIASCTL_CONFIG" ]; then
+        printf 'aliasctl: %s changed; keeping the previous version, run "aliasctl allow" to load it\n' "$ALIASCTL_CONFIG" >&2
+        __aliasctl_edit_hinted="$ALIASCTL_CONFIG"
+      fi
     fi
   fi
 
@@ -170,6 +210,15 @@ const hookFunction = `__aliasctl_hook() {
   fi
 
   return $__aliasctl_status
+}
+
+# a failed reload is tried again after the next edit or allow, not on every prompt; allow rewrites
+# the list so its mtime counts too, and a same-second tie counts as newer since bash 3.2 sees whole seconds
+__aliasctl_retry_due() {
+  local __aliasctl_seen="$__aliasctl_stamp.seen"
+  [ -e "$__aliasctl_seen" ] || return 0
+  [ "$ALIASCTL_CONFIG" -nt "$__aliasctl_seen" ] && return 0
+  [ -e "${__aliasctl_allowed:-}" ] && ! [ "$__aliasctl_seen" -nt "$__aliasctl_allowed" ]
 }
 `
 
