@@ -59,6 +59,13 @@ var inspectCmd = &cobra.Command{
 			fmt.Println()
 		}
 
+		fmt.Println("Tools")
+		fmt.Println("-----")
+
+		for _, tool := range env.Tools {
+			fmt.Printf("%s %s (check: %s)\n", tool.Name, tool.Rule, shell.FormatCommand(tool.Check))
+		}
+
 		return nil
 	},
 }

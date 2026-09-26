@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -61,5 +62,61 @@ func TestLoadEmptyFile(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected empty config to fail validation")
+	}
+}
+
+func TestLoadToolForms(t *testing.T) {
+	path := writeConfig(t, `name: test
+aliases:
+  k: kubectl
+tools:
+  go: 1.20
+  kubectl: ">=1.29"
+  mytool:
+    version: "2.1"
+    check: "mytool version --short"
+    timeout: 20s
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := map[string]ToolSpec{
+		"go":      {Version: "1.20"},
+		"kubectl": {Version: ">=1.29"},
+		"mytool":  {Version: "2.1", Check: "mytool version --short", Timeout: "20s"},
+	}
+
+	if !reflect.DeepEqual(cfg.Tools, expected) {
+		t.Fatalf("expected %+v, got %+v", expected, cfg.Tools)
+	}
+}
+
+func TestLoadRejectsUnknownToolField(t *testing.T) {
+	path := writeConfig(t, `name: test
+aliases:
+  k: kubectl
+tools:
+  go:
+    versoin: "1.22"
+`)
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error for unknown tool field")
+	}
+}
+
+func TestLoadRejectsToolList(t *testing.T) {
+	path := writeConfig(t, `name: test
+aliases:
+  k: kubectl
+tools:
+  go: ["1.22"]
+`)
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error for a list-valued tool")
 	}
 }

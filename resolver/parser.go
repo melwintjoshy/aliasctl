@@ -101,7 +101,7 @@ func scanTokens(input string, rejectShellSyntax bool) ([]string, error) {
 		default:
 			if rejectShellSyntax && (strings.ContainsRune(shellSyntax, ch) || (ch == '~' && !tokenStarted)) {
 				return nil, fmt.Errorf(
-					"shell syntax %q is not supported in aliases; quote it or use a function",
+					"shell syntax %q is not supported",
 					string(ch),
 				)
 			}

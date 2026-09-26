@@ -313,7 +313,7 @@ func TestResolveRejectsShellSyntaxInAlias(t *testing.T) {
 		t.Fatal("expected shell syntax error")
 	}
 
-	expected := `invalid alias "gofiles": shell syntax "*" is not supported in aliases; quote it or use a function`
+	expected := `invalid alias "gofiles": shell syntax "*" is not supported; quote it or use a function`
 
 	if err.Error() != expected {
 		t.Fatalf("expected %q, got %q", expected, err.Error())

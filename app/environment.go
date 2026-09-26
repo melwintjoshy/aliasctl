@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/melwintjoshy/aliasctl/config"
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -27,6 +28,14 @@ func LoadEnvironment(configPath string) (*resolver.Environment, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("could not resolve configuration: %w", err)
 	}
+
+	// tool checks run from here so relative check paths work from any subdirectory
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not resolve configuration path: %w", err)
+	}
+
+	env.Dir = filepath.Dir(absolutePath)
 
 	return env, path, nil
 }

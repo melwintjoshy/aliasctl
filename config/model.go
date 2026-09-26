@@ -9,4 +9,6 @@ type Config struct {
 
 	// fish can't run bash bodies, so fish gets its own
 	FunctionsFish map[string]string `yaml:"functions_fish"`
+
+	Tools map[string]ToolSpec `yaml:"tools"`
 }

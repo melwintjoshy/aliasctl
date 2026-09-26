@@ -34,24 +34,7 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 	}
 
 	for name, command := range cfg.Aliases {
-		if err := checkShellSyntax(command); err != nil {
-			return nil, fmt.Errorf(
-				"invalid alias %q: %w",
-				name,
-				err,
-			)
-		}
-
-		resolved, err := resolveVariables(command, cfg.Variables)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"invalid alias %q: %w",
-				name,
-				err,
-			)
-		}
-
-		parsed, err := parseCommand(resolved)
+		parsed, err := resolveCommand(command, cfg.Variables, "quote it or use a function")
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid alias %q: %w",
@@ -63,7 +46,28 @@ func Resolve(cfg *config.Config) (*Environment, error) {
 		env.Aliases[name] = parsed
 	}
 
+	tools, err := resolveTools(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	env.Tools = tools
+
 	return env, nil
+}
+
+// syntax is checked before substitution so values from variables stay plain text
+func resolveCommand(raw string, variables map[string]string, hint string) (Command, error) {
+	if err := checkShellSyntax(raw); err != nil {
+		return Command{}, fmt.Errorf("%w; %s", err, hint)
+	}
+
+	resolved, err := resolveVariables(raw, variables)
+	if err != nil {
+		return Command{}, err
+	}
+
+	return parseCommand(resolved)
 }
 
 var placeholderPattern = regexp.MustCompile(`\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}`)
