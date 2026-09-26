@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,5 +69,43 @@ func TestToolsCheckWithoutMiseKeepsWorking(t *testing.T) {
 
 	if output, err := runRoot(t, "--config", path, "tools", "check"); err != nil {
 		t.Fatalf("expected check to pass from PATH alone, got %v\n%s", err, output)
+	}
+}
+
+func TestRunUsesMiseInstalledVersion(t *testing.T) {
+	// the only fakego is the one mise installed; run has to find it through the plan's PATH
+	fake := fakemise.Install(t)
+
+	if err := (mise.CLI{}).Install("fakego@1.22.6", io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	path := writeTestConfig(t, miseToolsConfig)
+
+	stdout, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer stdout.Close()
+
+	saved := os.Stdout
+	os.Stdout = stdout
+
+	output, runErr := runRoot(t, "--config", path, "run", "--shell", "bash", "fakego", "version")
+
+	os.Stdout = saved
+
+	if runErr != nil {
+		t.Fatalf("run failed: %v\n%s", runErr, output)
+	}
+
+	data, err := os.ReadFile(stdout.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "fakego version 1.22.6\n" {
+		t.Fatalf("expected the mise install of fakego to run, got %q (root %s)", data, fake.Root)
 	}
 }

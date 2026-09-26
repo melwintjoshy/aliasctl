@@ -39,7 +39,20 @@ func ActivateTools(env *resolver.Environment, backend mise.Backend) error {
 		return err
 	}
 
-	env.PathPrepend = slices.Compact(paths)
+	env.PathPrepend = uniqueInOrder(paths)
 
 	return nil
+}
+
+// two tools can share a bin dir, and slices.Compact would only drop repeats that sit next to each other
+func uniqueInOrder(paths []string) []string {
+	var unique []string
+
+	for _, path := range paths {
+		if !slices.Contains(unique, path) {
+			unique = append(unique, path)
+		}
+	}
+
+	return unique
 }

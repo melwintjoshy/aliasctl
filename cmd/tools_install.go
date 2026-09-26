@@ -95,7 +95,6 @@ files are not changed; aliasctl puts the installed versions on PATH itself.`,
 		}
 
 		// re-resolved so the table shows the versions just installed
-		env.PathPrepend = nil
 		activateTools(cmd.ErrOrStderr(), env)
 
 		fmt.Fprintln(output)
