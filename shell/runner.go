@@ -15,7 +15,7 @@ const activeEnvironmentVariable = "ALIASCTL_ENV"
 
 // Runner starts an interactive shell or runs one command inside the environment.
 type Runner interface {
-	Start(env *resolver.Environment) error
+	Start(env *resolver.Environment, configPath string) error
 	Run(env *resolver.Environment, args []string) error
 }
 

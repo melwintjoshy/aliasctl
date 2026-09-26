@@ -91,7 +91,7 @@ end
 
 type fishRunner struct{}
 
-func (fishRunner) Start(env *resolver.Environment) error {
+func (fishRunner) Start(env *resolver.Environment, configPath string) error {
 	if err := checkNotNested(); err != nil {
 		return err
 	}
@@ -103,7 +103,12 @@ func (fishRunner) Start(env *resolver.Environment) error {
 		return err
 	}
 
-	path, err := writeTempFile("", "aliasctl-*.fish", definitions+fishPromptHook)
+	bannerScript := ""
+	if configPath != "" {
+		bannerScript = RenderBanner(env, configPath)
+	}
+
+	path, err := writeTempFile("", "aliasctl-*.fish", definitions+bannerScript+fishPromptHook)
 	if err != nil {
 		return err
 	}

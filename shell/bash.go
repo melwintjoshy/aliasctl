@@ -75,12 +75,12 @@ func shellQuote(value string) string {
 
 type bashRunner struct{}
 
-func (bashRunner) Start(env *resolver.Environment) error {
+func (bashRunner) Start(env *resolver.Environment, configPath string) error {
 	if err := checkNotNested(); err != nil {
 		return err
 	}
 
-	script, err := renderInteractiveRC(env)
+	script, err := renderInteractiveRC(env, configPath)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ PROMPT_COMMAND="${PROMPT_COMMAND}"$'\n''__aliasctl_prompt'
 `
 
 // user rc first so project definitions win, prompt last so the rc can't overwrite it
-func renderInteractiveRC(env *resolver.Environment) (string, error) {
+func renderInteractiveRC(env *resolver.Environment, configPath string) (string, error) {
 	definitions, err := (BashRenderer{}).Render(env)
 	if err != nil {
 		return "", err
@@ -150,6 +150,10 @@ func renderInteractiveRC(env *resolver.Environment) (string, error) {
 	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; ` +
 		`elif [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"; fi` + "\n")
 	rc.WriteString(definitions)
+
+	if configPath != "" {
+		rc.WriteString(RenderBanner(env, configPath))
+	}
 
 	// referencing the variable keeps the name out of prompt expansion
 	rc.WriteString(bashPromptHook)

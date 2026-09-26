@@ -20,12 +20,12 @@ var shellCmd = &cobra.Command{
 			return err
 		}
 
-		env, err := app.LoadEnvironment(configPath)
+		env, resolvedConfigPath, err := app.LoadEnvironment(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
-		if err := runner.Start(env); err != nil {
+		if err := runner.Start(env, resolvedConfigPath); err != nil {
 			return fmt.Errorf("shell error: %w", err)
 		}
 
