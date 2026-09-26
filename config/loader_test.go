@@ -120,3 +120,37 @@ tools:
 		t.Fatal("expected error for a list-valued tool")
 	}
 }
+
+func TestLoadFormatVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		header  string
+		wantErr string
+	}{
+		{name: "missing means 1", header: ""},
+		{name: "explicit 1", header: "version: 1\n"},
+		{
+			name:    "newer format",
+			header:  "version: 2\nnew_feature: true\n",
+			wantErr: "aliasctl.yaml uses format version 2; this aliasctl supports 1, upgrade it",
+		},
+		{name: "zero", header: "version: 0\n", wantErr: "version must be a positive whole number, got 0"},
+		{name: "not a number", header: "version: one\n", wantErr: "version must be a positive whole number, got one"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.header+"name: test\naliases:\n  k: kubectl\n")
+
+			_, err := Load(path)
+
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr) {
+				t.Fatalf("expected %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
