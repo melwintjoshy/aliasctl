@@ -76,7 +76,14 @@ func execute(build func(dir string) (Plan, error)) error {
 		}
 	}
 
-	cmd := exec.Command(plan.Argv[0], plan.Argv[1:]...)
+	// exec.Command would search aliasctl's own PATH, which lacks the tool dirs the plan prepends
+	path, err := lookPath(plan.Argv[0], environmentMap(plan.Env)["PATH"])
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(path, plan.Argv[1:]...)
+	cmd.Args = slices.Clone(plan.Argv)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -85,6 +92,27 @@ func execute(build func(dir string) (Plan, error)) error {
 	cmd.Env = plan.Env
 
 	return cmd.Run()
+}
+
+// like exec.LookPath, but searching the given PATH; a name with a separator is used as is
+func lookPath(name, path string) (string, error) {
+	if strings.Contains(name, string(os.PathSeparator)) {
+		return name, nil
+	}
+
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			continue
+		}
+
+		candidate := filepath.Join(dir, name)
+
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
 // stands in for the temp dir when a plan is printed instead of run
