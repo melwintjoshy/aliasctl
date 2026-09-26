@@ -1,0 +1,63 @@
+version: 2
+
+project_name: aliasctl
+
+builds:
+  - id: aliasctl
+    main: .
+    binary: aliasctl
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    # .Tag keeps the leading v, so --version reads the same as a go install build
+    ldflags:
+      - -s -w
+      - -X github.com/melwintjoshy/aliasctl/internal/buildinfo.Version={{ .Tag }}
+      - -X github.com/melwintjoshy/aliasctl/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/melwintjoshy/aliasctl/internal/buildinfo.Date={{ .CommitDate }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.MD
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat(\(.*\))?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.*\))?:'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^test(\(.*\))?:'
+      - '^chore(\(.*\))?:'
+      - '^ci(\(.*\))?:'
+      - '^docs(\(.*\))?:'
+      - '^Merge '
+
+release:
+  github:
+    owner: melwintjoshy
+    name: aliasctl
+  prerelease: auto
