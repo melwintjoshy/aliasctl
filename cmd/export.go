@@ -59,6 +59,8 @@ var exportCmd = &cobra.Command{
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
+		activateTools(os.Stderr, env)
+
 		script, err := shell.RenderExport(env, shellName, absolutePath, stamp)
 		if err != nil {
 			os.Remove(stamp)

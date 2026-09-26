@@ -299,7 +299,32 @@ func BuildEnvironment(env *resolver.Environment) []string {
 		)
 	}
 
+	if len(env.PathPrepend) > 0 {
+		path := strings.Join(env.PathPrepend, string(os.PathListSeparator))
+
+		if current := environmentMap(environment)["PATH"]; current != "" {
+			path += string(os.PathListSeparator) + current
+		}
+
+		environment = setEnvironmentVariable(environment, "PATH", path)
+	}
+
 	return environment
+}
+
+// written after the user rc, since an rc that rebuilds PATH would otherwise drop the tool dirs
+func posixPathExport(env *resolver.Environment) string {
+	if len(env.PathPrepend) == 0 {
+		return ""
+	}
+
+	quoted := make([]string, len(env.PathPrepend))
+
+	for i, dir := range env.PathPrepend {
+		quoted[i] = shellQuote(dir)
+	}
+
+	return "export PATH=" + strings.Join(quoted, ":") + `:"$PATH"` + "\n"
 }
 
 func setEnvironmentVariable(

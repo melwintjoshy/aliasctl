@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/melwintjoshy/aliasctl/app"
+	"github.com/melwintjoshy/aliasctl/mise"
 	"github.com/melwintjoshy/aliasctl/resolver"
 	"github.com/melwintjoshy/aliasctl/shell"
 	"github.com/melwintjoshy/aliasctl/tools"
@@ -31,6 +32,8 @@ var toolsCheckCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
+
+		activateTools(cmd.ErrOrStderr(), env)
 
 		output := cmd.OutOrStdout()
 
@@ -116,4 +119,14 @@ func warnToolProblems(w io.Writer, env *resolver.Environment) {
 func init() {
 	toolsCmd.AddCommand(toolsCheckCmd)
 	rootCmd.AddCommand(toolsCmd)
+}
+
+// swapped in tests; the real one runs the mise binary
+var miseBackend mise.Backend = mise.CLI{}
+
+// uses mise-installed tool versions when there are any; a mise problem is reported, never fatal
+func activateTools(w io.Writer, env *resolver.Environment) {
+	if err := app.ActivateTools(env, miseBackend); err != nil {
+		fmt.Fprintf(w, "aliasctl: could not use mise tool versions: %v\n", err)
+	}
 }

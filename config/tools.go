@@ -12,6 +12,9 @@ type ToolSpec struct {
 	Version string `yaml:"version"`
 	Check   string `yaml:"check"`
 	Timeout string `yaml:"timeout"`
+
+	// mise tool name or backend, e.g. aqua:hashicorp/terraform; defaults to the tool name
+	Mise string `yaml:"mise"`
 }
 
 // UnmarshalYAML accepts the short form `go: "1.22"` as well as a mapping.
@@ -29,7 +32,7 @@ func (s *ToolSpec) UnmarshalYAML(node *yaml.Node) error {
 		key := node.Content[i]
 
 		switch key.Value {
-		case "version", "check", "timeout":
+		case "version", "check", "timeout", "mise":
 		default:
 			return fmt.Errorf("line %d: field %s not found in tool", key.Line, key.Value)
 		}

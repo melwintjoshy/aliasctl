@@ -106,7 +106,7 @@ func (fishRunner) StartPlan(env *resolver.Environment, dir string) (Plan, error)
 	return Plan{
 		Argv:  []string{"fish", "-i", "--init-command", "source " + fishQuote(path)},
 		Env:   startEnvironment(env),
-		Files: []File{{Name: "init.fish", Content: definitions + fishPromptHook}},
+		Files: []File{{Name: "init.fish", Content: definitions + fishPathSet(env) + fishPromptHook}},
 	}, nil
 }
 
@@ -140,4 +140,18 @@ func warnBashOnlyFunctions(env *resolver.Environment) {
 			)
 		}
 	}
+}
+
+func fishPathSet(env *resolver.Environment) string {
+	if len(env.PathPrepend) == 0 {
+		return ""
+	}
+
+	quoted := make([]string, len(env.PathPrepend))
+
+	for i, dir := range env.PathPrepend {
+		quoted[i] = fishQuote(dir)
+	}
+
+	return "set -gx PATH " + strings.Join(quoted, " ") + " $PATH\n"
 }

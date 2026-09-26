@@ -37,6 +37,11 @@ func RenderExport(env *resolver.Environment, shellName, configPath, stampPath st
 	functionNames := slices.Sorted(maps.Keys(env.Functions))
 	variableNames := slices.Sorted(maps.Keys(env.Variables))
 
+	// PATH is saved like any variable so leaving the project restores it
+	if len(env.PathPrepend) > 0 && !slices.Contains(variableNames, "PATH") {
+		variableNames = append(variableNames, "PATH")
+	}
+
 	// bash and zsh print reusable definitions with different flags
 	saveAlias, saveFunction := "alias %s", "declare -f %s"
 
@@ -84,6 +89,7 @@ func RenderExport(env *resolver.Environment, shellName, configPath, stampPath st
 
 	output.WriteString("unset __aliasctl_saved\n")
 	output.WriteString(definitions)
+	output.WriteString(posixPathExport(env))
 
 	fmt.Fprintf(&output, "export %s=%s\n", activeEnvironmentVariable, shellQuote(env.Name))
 	fmt.Fprintf(&output, "export %s=1\n", hookEnvironmentVariable)

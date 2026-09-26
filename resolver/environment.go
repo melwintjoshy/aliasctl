@@ -13,6 +13,9 @@ type Environment struct {
 
 	// sorted by name
 	Tools []ToolRequirement
+
+	// tool bin dirs put in front of PATH; filled at run time, empty after Resolve
+	PathPrepend []string
 }
 
 func (e *Environment) Variable(name string) (string, bool) {

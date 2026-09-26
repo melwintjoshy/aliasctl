@@ -84,6 +84,7 @@ func renderZshStartup(env *resolver.Environment, dir, userDir string) (string, s
 	zshrc.WriteString("unset __aliasctl_user_zdotdir\n")
 	zshrc.WriteString(`if [ -f "$ZDOTDIR/.zshrc" ]; then . "$ZDOTDIR/.zshrc"; fi` + "\n")
 	zshrc.WriteString(definitions)
+	zshrc.WriteString(posixPathExport(env))
 
 	// precmd re-adds the prefix for prompts that rebuild PROMPT each time
 	fmt.Fprintf(

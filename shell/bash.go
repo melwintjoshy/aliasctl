@@ -140,6 +140,7 @@ func renderInteractiveRC(env *resolver.Environment) (string, error) {
 	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; ` +
 		`elif [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"; fi` + "\n")
 	rc.WriteString(definitions)
+	rc.WriteString(posixPathExport(env))
 
 	// referencing the variable keeps the name out of prompt expansion
 	rc.WriteString(bashPromptHook)

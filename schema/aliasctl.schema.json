@@ -71,6 +71,11 @@
                 "description": "How long the check may take, e.g. 10s. Defaults to 5s.",
                 "type": "string",
                 "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+              },
+              "mise": {
+                "description": "mise tool name or backend used by aliasctl tools install, e.g. aqua:hashicorp/terraform. Defaults to the tool name.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:/._-]*$"
               }
             }
           }

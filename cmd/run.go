@@ -27,6 +27,8 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
+		activateTools(cmd.ErrOrStderr(), env)
+
 		if printPlan {
 			return shell.DescribeRun(cmd.OutOrStdout(), runner, env, args)
 		}

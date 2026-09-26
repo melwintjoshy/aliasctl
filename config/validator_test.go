@@ -258,3 +258,25 @@ func TestValidateTools(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMiseName(t *testing.T) {
+	for spec, wantErr := range map[string]bool{
+		"":                         false,
+		"go":                       false,
+		"aqua:hashicorp/terraform": false,
+		"ubi:cli/cli":              false,
+		"go@1.22":                  true,
+		"-go":                      true,
+		"go tool":                  true,
+	} {
+		cfg := &Config{
+			Name:    "test",
+			Aliases: map[string]string{"k": "kubectl"},
+			Tools:   map[string]ToolSpec{"tool": {Version: "*", Mise: spec}},
+		}
+
+		if err := cfg.Validate(); (err != nil) != wantErr {
+			t.Fatalf("mise %q: wantErr=%v, got %v", spec, wantErr, err)
+		}
+	}
+}
