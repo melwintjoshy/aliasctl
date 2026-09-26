@@ -72,7 +72,7 @@ var allowCmd = &cobra.Command{
 		}
 
 		// refuse to trust something that would not load anyway
-		if _, err := app.LoadEnvironment(resolvedPath); err != nil {
+		if _, _, err := app.LoadEnvironment(resolvedPath); err != nil {
 			return fmt.Errorf("configuration error: %w", err)
 		}
 

@@ -161,7 +161,7 @@ func TestRunShellExecutesFunctions(t *testing.T) {
 func TestRunBashRefusesNestedEnvironment(t *testing.T) {
 	t.Setenv("ALIASCTL_ENV", "outer")
 
-	err := Start(bashRunner{}, &resolver.Environment{Name: "inner"})
+	err := Start(bashRunner{}, &resolver.Environment{Name: "inner"}, "")
 	if err == nil {
 		t.Fatal("expected nested environment error")
 	}
@@ -176,7 +176,7 @@ func TestRunBashRefusesNestedEnvironment(t *testing.T) {
 func runInteractive(t *testing.T, home string, env *resolver.Environment, script string) string {
 	t.Helper()
 
-	rc, err := renderInteractiveRC(env)
+	rc, err := renderInteractiveRC(env, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestInteractiveRCLayersOnUserRC(t *testing.T) {
 		},
 	}
 
-	rc, err := renderInteractiveRC(env)
+	rc, err := renderInteractiveRC(env, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,5 +478,24 @@ func TestChildEnvironmentDropsHookMarker(t *testing.T) {
 		if strings.HasPrefix(entry, "ALIASCTL_HOOK=") {
 			t.Fatal("ALIASCTL_HOOK leaked into the child environment")
 		}
+	}
+}
+
+func TestRenderInteractiveRCIncludesBanner(t *testing.T) {
+	env := &resolver.Environment{
+		Name: "dev",
+	}
+
+	rc, err := renderInteractiveRC(env, "/path/to/aliasctl.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(rc, "Environment: dev") {
+		t.Fatal("expected environment name in rendered rc banner")
+	}
+
+	if !strings.Contains(rc, "Config:      /path/to/aliasctl.yaml") {
+		t.Fatal("expected config path in rendered rc banner")
 	}
 }

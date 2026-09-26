@@ -85,6 +85,7 @@ func TestRenderExportRestoresPath(t *testing.T) {
 func TestFishStartPlanSetsPath(t *testing.T) {
 	plan, err := (fishRunner{}).StartPlan(
 		&resolver.Environment{Name: "demo", PathPrepend: []string{"/mise/go/1.22.6/bin"}},
+		"",
 		printDir,
 	)
 	if err != nil {

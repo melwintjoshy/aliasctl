@@ -23,7 +23,7 @@ var shellCmd = &cobra.Command{
 			return err
 		}
 
-		env, err := app.LoadEnvironment(configPath)
+		env, resolvedConfigPath, err := app.LoadEnvironment(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
@@ -31,12 +31,12 @@ var shellCmd = &cobra.Command{
 		activateTools(cmd.ErrOrStderr(), env)
 
 		if printPlan {
-			return shell.DescribeStart(cmd.OutOrStdout(), runner, env)
+			return shell.DescribeStart(cmd.OutOrStdout(), runner, env, resolvedConfigPath)
 		}
 
 		warnToolProblems(cmd.ErrOrStderr(), env)
 
-		if err := shell.Start(runner, env); err != nil {
+		if err := shell.Start(runner, env, resolvedConfigPath); err != nil {
 			return fmt.Errorf("shell error: %w", err)
 		}
 

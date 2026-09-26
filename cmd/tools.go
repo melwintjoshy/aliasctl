@@ -28,7 +28,7 @@ var toolsCheckCmd = &cobra.Command{
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		env, err := app.LoadEnvironment(configPath)
+		env, _, err := app.LoadEnvironment(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}

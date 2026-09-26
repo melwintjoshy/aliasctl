@@ -92,12 +92,17 @@ end
 
 type fishRunner struct{}
 
-func (fishRunner) StartPlan(env *resolver.Environment, dir string) (Plan, error) {
+func (fishRunner) StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error) {
 	warnBashOnlyFunctions(env)
 
 	definitions, err := (FishRenderer{}).Render(env)
 	if err != nil {
 		return Plan{}, err
+	}
+
+	bannerScript := ""
+	if configPath != "" {
+		bannerScript = RenderBanner(env, configPath)
 	}
 
 	path := filepath.Join(dir, "init.fish")
@@ -106,7 +111,7 @@ func (fishRunner) StartPlan(env *resolver.Environment, dir string) (Plan, error)
 	return Plan{
 		Argv:  []string{"fish", "-i", "--init-command", "source " + fishQuote(path)},
 		Env:   startEnvironment(env),
-		Files: []File{{Name: "init.fish", Content: definitions + fishPathSet(env) + fishPromptHook}},
+		Files: []File{{Name: "init.fish", Content: definitions + fishPathSet(env) + bannerScript + fishPromptHook}},
 	}, nil
 }
 

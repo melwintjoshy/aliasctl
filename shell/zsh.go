@@ -15,8 +15,8 @@ type ZshRenderer struct {
 
 type zshRunner struct{}
 
-func (zshRunner) StartPlan(env *resolver.Environment, dir string) (Plan, error) {
-	zshenv, zshrc, err := renderZshStartup(env, dir, userZdotdir())
+func (zshRunner) StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error) {
+	zshenv, zshrc, err := renderZshStartup(env, configPath, dir, userZdotdir())
 	if err != nil {
 		return Plan{}, err
 	}
@@ -60,7 +60,7 @@ func userZdotdir() string {
 }
 
 // zsh reads .zshenv and .zshrc from ZDOTDIR, so both are proxied and ZDOTDIR handed back to the user
-func renderZshStartup(env *resolver.Environment, dir, userDir string) (string, string, error) {
+func renderZshStartup(env *resolver.Environment, configPath, dir, userDir string) (string, string, error) {
 	definitions, err := (ZshRenderer{}).Render(env)
 	if err != nil {
 		return "", "", err
@@ -85,6 +85,10 @@ func renderZshStartup(env *resolver.Environment, dir, userDir string) (string, s
 	zshrc.WriteString(`if [ -f "$ZDOTDIR/.zshrc" ]; then . "$ZDOTDIR/.zshrc"; fi` + "\n")
 	zshrc.WriteString(definitions)
 	zshrc.WriteString(posixPathExport(env))
+
+	if configPath != "" {
+		zshrc.WriteString(RenderBanner(env, configPath))
+	}
 
 	// precmd re-adds the prefix for prompts that rebuild PROMPT each time
 	fmt.Fprintf(

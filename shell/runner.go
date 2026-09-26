@@ -17,7 +17,7 @@ const activeEnvironmentVariable = "ALIASCTL_ENV"
 
 // Runner builds the plan for an interactive shell or for one command; nothing runs until it is executed.
 type Runner interface {
-	StartPlan(env *resolver.Environment, dir string) (Plan, error)
+	StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error)
 	RunPlan(env *resolver.Environment, args []string, dir string) (Plan, error)
 }
 
@@ -34,14 +34,14 @@ type File struct {
 	Content string
 }
 
-// Start opens the interactive shell described by the runner's plan.
-func Start(runner Runner, env *resolver.Environment) error {
+// Start opens the interactive shell described by the runner's plan; configPath is shown in the banner.
+func Start(runner Runner, env *resolver.Environment, configPath string) error {
 	if err := checkNotNested(); err != nil {
 		return err
 	}
 
 	return execute(func(dir string) (Plan, error) {
-		return runner.StartPlan(env, dir)
+		return runner.StartPlan(env, configPath, dir)
 	})
 }
 
@@ -91,8 +91,8 @@ func execute(build func(dir string) (Plan, error)) error {
 const printDir = "<tmp>"
 
 // DescribeStart prints what Start would run and write, without running it.
-func DescribeStart(w io.Writer, runner Runner, env *resolver.Environment) error {
-	plan, err := runner.StartPlan(env, printDir)
+func DescribeStart(w io.Writer, runner Runner, env *resolver.Environment, configPath string) error {
+	plan, err := runner.StartPlan(env, configPath, printDir)
 	if err != nil {
 		return err
 	}

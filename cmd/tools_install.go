@@ -40,7 +40,7 @@ files are not changed; aliasctl puts the installed versions on PATH itself.`,
 
 		output := cmd.OutOrStdout()
 
-		env, err := app.LoadEnvironment(configPath)
+		env, _, err := app.LoadEnvironment(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}

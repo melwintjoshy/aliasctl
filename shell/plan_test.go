@@ -43,6 +43,7 @@ func TestDescribeStart(t *testing.T) {
 				"-ALIASCTL_HOOK\n",
 				"\n--- <tmp>/bashrc\n",
 				"alias kgp='kubectl get pods'\n",
+				"  Config:      /p/aliasctl.yaml",
 			},
 		},
 		{
@@ -52,6 +53,7 @@ func TestDescribeStart(t *testing.T) {
 				"ZDOTDIR=<tmp>\n",
 				"\n--- <tmp>/.zshenv\n",
 				"\n--- <tmp>/.zshrc\n",
+				"  Config:      /p/aliasctl.yaml",
 			},
 		},
 		{
@@ -60,6 +62,7 @@ func TestDescribeStart(t *testing.T) {
 				"command: fish -i --init-command 'source '\\''<tmp>/init.fish'\\'''\n",
 				"\n--- <tmp>/init.fish\n",
 				"function kgp\n",
+				"  Config:      /p/aliasctl.yaml",
 			},
 		},
 	}
@@ -67,7 +70,7 @@ func TestDescribeStart(t *testing.T) {
 	for _, tt := range tests {
 		var output bytes.Buffer
 
-		if err := DescribeStart(&output, tt.runner, planEnvironment()); err != nil {
+		if err := DescribeStart(&output, tt.runner, planEnvironment(), "/p/aliasctl.yaml"); err != nil {
 			t.Fatal(err)
 		}
 
