@@ -16,7 +16,7 @@ type ZshRenderer struct {
 
 type zshRunner struct{}
 
-func (zshRunner) Start(env *resolver.Environment) error {
+func (zshRunner) Start(env *resolver.Environment, configPath string) error {
 	if err := checkNotNested(); err != nil {
 		return err
 	}
@@ -28,7 +28,7 @@ func (zshRunner) Start(env *resolver.Environment) error {
 
 	defer os.RemoveAll(dir)
 
-	zshenv, zshrc, err := renderZshStartup(env, dir, userZdotdir())
+	zshenv, zshrc, err := renderZshStartup(env, configPath, dir, userZdotdir())
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func userZdotdir() string {
 }
 
 // zsh reads .zshenv and .zshrc from ZDOTDIR, so both are proxied and ZDOTDIR handed back to the user
-func renderZshStartup(env *resolver.Environment, dir, userDir string) (string, string, error) {
+func renderZshStartup(env *resolver.Environment, configPath, dir, userDir string) (string, string, error) {
 	definitions, err := (ZshRenderer{}).Render(env)
 	if err != nil {
 		return "", "", err
@@ -100,6 +100,10 @@ func renderZshStartup(env *resolver.Environment, dir, userDir string) (string, s
 	zshrc.WriteString("unset __aliasctl_user_zdotdir\n")
 	zshrc.WriteString(`if [ -f "$ZDOTDIR/.zshrc" ]; then . "$ZDOTDIR/.zshrc"; fi` + "\n")
 	zshrc.WriteString(definitions)
+
+	if configPath != "" {
+		zshrc.WriteString(RenderBanner(env, configPath))
+	}
 
 	// precmd re-adds the prefix for prompts that rebuild PROMPT each time
 	fmt.Fprintf(
