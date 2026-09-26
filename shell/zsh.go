@@ -3,7 +3,6 @@ package shell
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -16,55 +15,40 @@ type ZshRenderer struct {
 
 type zshRunner struct{}
 
-func (zshRunner) Start(env *resolver.Environment, configPath string) error {
-	if err := checkNotNested(); err != nil {
-		return err
-	}
-
-	dir, err := os.MkdirTemp("", "aliasctl-zsh-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary zsh dir: %w", err)
-	}
-
-	defer os.RemoveAll(dir)
-
+func (zshRunner) StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error) {
 	zshenv, zshrc, err := renderZshStartup(env, configPath, dir, userZdotdir())
 	if err != nil {
-		return err
+		return Plan{}, err
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, ".zshenv"), []byte(zshenv), 0600); err != nil {
-		return fmt.Errorf("failed to write zshenv: %w", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, ".zshrc"), []byte(zshrc), 0600); err != nil {
-		return fmt.Errorf("failed to write zshrc: %w", err)
-	}
-
-	return startInteractive(env, []string{"ZDOTDIR=" + dir}, "zsh", "-i")
+	return Plan{
+		Argv: []string{"zsh", "-i"},
+		Env:  setEnvironmentVariable(startEnvironment(env), "ZDOTDIR", dir),
+		Files: []File{
+			{Name: ".zshenv", Content: zshenv},
+			{Name: ".zshrc", Content: zshrc},
+		},
+	}, nil
 }
 
-func (zshRunner) Run(env *resolver.Environment, args []string) error {
-	if len(args) == 0 {
-		return runPlain(env, args)
+func (zshRunner) RunPlan(env *resolver.Environment, args []string, dir string) (Plan, error) {
+	found, err := lookupCommand(env, args[0], false)
+	if err != nil {
+		return Plan{}, err
 	}
 
-	if found, err := lookupCommand(env, args[0], false); err != nil || !found {
-		if err != nil {
-			return err
-		}
-
-		return runPlain(env, args)
+	if !found {
+		return plainPlan(env, args), nil
 	}
 
 	definitions, err := (ZshRenderer{}).Render(env)
 	if err != nil {
-		return err
+		return Plan{}, err
 	}
 
 	script := definitions + args[0] + ` "$@"` + "\n"
 
-	return runScript(env, []string{"zsh", "-f"}, script, args[1:])
+	return scriptPlan(env, dir, "run.zsh", script, []string{"zsh", "-f"}, args[1:]), nil
 }
 
 func userZdotdir() string {
@@ -100,6 +84,7 @@ func renderZshStartup(env *resolver.Environment, configPath, dir, userDir string
 	zshrc.WriteString("unset __aliasctl_user_zdotdir\n")
 	zshrc.WriteString(`if [ -f "$ZDOTDIR/.zshrc" ]; then . "$ZDOTDIR/.zshrc"; fi` + "\n")
 	zshrc.WriteString(definitions)
+	zshrc.WriteString(posixPathExport(env))
 
 	if configPath != "" {
 		zshrc.WriteString(RenderBanner(env, configPath))

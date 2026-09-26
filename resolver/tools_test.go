@@ -19,7 +19,7 @@ func TestResolveTools(t *testing.T) {
 		Aliases: map[string]string{"k": "kubectl"},
 
 		Tools: map[string]config.ToolSpec{
-			"terraform": {Version: ">=1.6"},
+			"terraform": {Version: ">=1.6", Mise: "aqua:hashicorp/terraform"},
 			"go":        {Version: "1.22"},
 			"mytool":    {Version: "2", Check: `mytool version --context ${CTX} "long name"`},
 			"swift":     {Version: "*", Timeout: "20s"},
@@ -32,14 +32,26 @@ func TestResolveTools(t *testing.T) {
 	}
 
 	expected := []ToolRequirement{
-		{Name: "go", Rule: "1.22", Check: Command{Name: "go", Args: []string{"version"}}},
+		{Name: "go", Rule: "1.22", Check: Command{Name: "go", Args: []string{"version"}}, Mise: "go"},
 		{
 			Name:  "mytool",
 			Rule:  "2",
 			Check: Command{Name: "mytool", Args: []string{"version", "--context", "prod", "long name"}},
+			Mise:  "mytool",
 		},
-		{Name: "swift", Rule: "*", Check: Command{Name: "swift", Args: []string{"--version"}}, Timeout: 20 * time.Second},
-		{Name: "terraform", Rule: ">=1.6", Check: Command{Name: "terraform", Args: []string{"--version"}}},
+		{
+			Name:    "swift",
+			Rule:    "*",
+			Check:   Command{Name: "swift", Args: []string{"--version"}},
+			Timeout: 20 * time.Second,
+			Mise:    "swift",
+		},
+		{
+			Name:  "terraform",
+			Rule:  ">=1.6",
+			Check: Command{Name: "terraform", Args: []string{"--version"}},
+			Mise:  "aqua:hashicorp/terraform",
+		},
 	}
 
 	if !reflect.DeepEqual(env.Tools, expected) {

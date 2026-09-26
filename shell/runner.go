@@ -2,6 +2,8 @@ package shell
 
 import (
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,10 +15,231 @@ import (
 
 const activeEnvironmentVariable = "ALIASCTL_ENV"
 
-// Runner starts an interactive shell or runs one command inside the environment.
+// Runner builds the plan for an interactive shell or for one command; nothing runs until it is executed.
 type Runner interface {
-	Start(env *resolver.Environment, configPath string) error
-	Run(env *resolver.Environment, args []string) error
+	StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error)
+	RunPlan(env *resolver.Environment, args []string, dir string) (Plan, error)
+}
+
+// Plan is the command to run, its full environment and the files it expects in dir.
+type Plan struct {
+	Argv  []string
+	Env   []string
+	Files []File
+}
+
+type File struct {
+	// relative to the plan's dir
+	Name    string
+	Content string
+}
+
+// Start opens the interactive shell described by the runner's plan; configPath is shown in the banner.
+func Start(runner Runner, env *resolver.Environment, configPath string) error {
+	if err := checkNotNested(); err != nil {
+		return err
+	}
+
+	return execute(func(dir string) (Plan, error) {
+		return runner.StartPlan(env, configPath, dir)
+	})
+}
+
+// Run runs one command, going through the shell only when it names an alias or function.
+func Run(runner Runner, env *resolver.Environment, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no command specified")
+	}
+
+	return execute(func(dir string) (Plan, error) {
+		return runner.RunPlan(env, args, dir)
+	})
+}
+
+// the private temp dir holds every generated file and is removed when the command exits
+func execute(build func(dir string) (Plan, error)) error {
+	dir, err := os.MkdirTemp("", "aliasctl-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary dir: %w", err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	plan, err := build(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range plan.Files {
+		if err := os.WriteFile(filepath.Join(dir, file.Name), []byte(file.Content), 0600); err != nil {
+			return fmt.Errorf("failed to write %s: %w", file.Name, err)
+		}
+	}
+
+	// exec.Command would search aliasctl's own PATH, which lacks the tool dirs the plan prepends
+	path, err := lookPath(plan.Argv[0], environmentMap(plan.Env)["PATH"])
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(path, plan.Argv[1:]...)
+	cmd.Args = slices.Clone(plan.Argv)
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	cmd.Env = plan.Env
+
+	return cmd.Run()
+}
+
+// like exec.LookPath, but searching the given PATH; a name with a separator is used as is
+func lookPath(name, path string) (string, error) {
+	if strings.Contains(name, string(os.PathSeparator)) {
+		return name, nil
+	}
+
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			continue
+		}
+
+		candidate := filepath.Join(dir, name)
+
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
+// stands in for the temp dir when a plan is printed instead of run
+const printDir = "<tmp>"
+
+// DescribeStart prints what Start would run and write, without running it.
+func DescribeStart(w io.Writer, runner Runner, env *resolver.Environment, configPath string) error {
+	plan, err := runner.StartPlan(env, configPath, printDir)
+	if err != nil {
+		return err
+	}
+
+	describe(w, plan)
+
+	return nil
+}
+
+// DescribeRun prints what Run would run and write, without running it.
+func DescribeRun(w io.Writer, runner Runner, env *resolver.Environment, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no command specified")
+	}
+
+	plan, err := runner.RunPlan(env, args, printDir)
+	if err != nil {
+		return err
+	}
+
+	describe(w, plan)
+
+	return nil
+}
+
+func describe(w io.Writer, plan Plan) {
+	tokens := make([]string, len(plan.Argv))
+
+	for i, token := range plan.Argv {
+		tokens[i] = displayToken(token)
+	}
+
+	fmt.Fprintf(w, "command: %s\n", strings.Join(tokens, " "))
+
+	// the full environment is mostly the caller's own, so only the differences are shown
+	for i, change := range environmentChanges(os.Environ(), plan.Env) {
+		label := "env:    "
+		if i > 0 {
+			label = "        "
+		}
+
+		fmt.Fprintf(w, "%s %s\n", label, change)
+	}
+
+	for _, file := range plan.Files {
+		fmt.Fprintf(w, "\n--- %s\n%s", filepath.Join(printDir, file.Name), file.Content)
+
+		if !strings.HasSuffix(file.Content, "\n") {
+			fmt.Fprintln(w)
+		}
+	}
+}
+
+// like quoteToken, but <tmp> stays readable
+func displayToken(token string) string {
+	if token != "" && !strings.ContainsAny(token, " \t\n'\"\\$`;&|*?") {
+		return token
+	}
+
+	return shellQuote(token)
+}
+
+// changes are "KEY=value" for set or changed keys and "-KEY" for removed ones, sorted by key
+func environmentChanges(base, next []string) []string {
+	before := environmentMap(base)
+	after := environmentMap(next)
+
+	var changes []string
+
+	for _, key := range slices.Sorted(maps.Keys(after)) {
+		if value, ok := before[key]; !ok || value != after[key] {
+			changes = append(changes, key+"="+after[key])
+		}
+	}
+
+	for _, key := range slices.Sorted(maps.Keys(before)) {
+		if _, ok := after[key]; !ok {
+			changes = append(changes, "-"+key)
+		}
+	}
+
+	return changes
+}
+
+func environmentMap(environ []string) map[string]string {
+	values := make(map[string]string, len(environ))
+
+	// later entries win, matching how exec treats duplicate keys
+	for _, entry := range environ {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			values[key] = value
+		}
+	}
+
+	return values
+}
+
+// set before the user rc runs so it can see which environment is active
+func startEnvironment(env *resolver.Environment) []string {
+	return setEnvironmentVariable(
+		unsetEnvironmentVariable(os.Environ(), hookEnvironmentVariable),
+		activeEnvironmentVariable,
+		env.Name,
+	)
+}
+
+func plainPlan(env *resolver.Environment, args []string) Plan {
+	return Plan{Argv: slices.Clone(args), Env: BuildEnvironment(env)}
+}
+
+// script files are read command by command, so aliases defined in them expand later on
+func scriptPlan(env *resolver.Environment, dir, name, script string, shellArgs, args []string) Plan {
+	argv := append(slices.Clone(shellArgs), filepath.Join(dir, name))
+
+	return Plan{
+		Argv:  append(argv, args...),
+		Env:   BuildEnvironment(env),
+		Files: []File{{Name: name, Content: script}},
+	}
 }
 
 var Supported = []string{"bash", "zsh", "fish"}
@@ -88,76 +311,6 @@ func lookupCommand(env *resolver.Environment, name string, fish bool) (bool, err
 	return false, nil
 }
 
-func writeTempFile(dir, pattern, content string) (string, error) {
-	file, err := os.CreateTemp(dir, pattern)
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary file: %w", err)
-	}
-
-	path := file.Name()
-
-	if _, err := file.WriteString(content); err != nil {
-		file.Close()
-		os.Remove(path)
-		return "", fmt.Errorf("failed to write temporary file: %w", err)
-	}
-
-	if err := file.Close(); err != nil {
-		os.Remove(path)
-		return "", fmt.Errorf("failed to close temporary file: %w", err)
-	}
-
-	return path, nil
-}
-
-func startInteractive(env *resolver.Environment, extraEnv []string, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// set before the user rc runs so it can see which environment is active
-	cmd.Env = setEnvironmentVariable(
-		unsetEnvironmentVariable(os.Environ(), hookEnvironmentVariable),
-		activeEnvironmentVariable,
-		env.Name,
-	)
-	cmd.Env = append(cmd.Env, extraEnv...)
-
-	return cmd.Run()
-}
-
-// script files are read command by command, so aliases defined in them expand later on
-func runScript(env *resolver.Environment, shellArgs []string, script string, args []string) error {
-	path, err := writeTempFile("", "aliasctl-*.sh", script)
-	if err != nil {
-		return err
-	}
-
-	defer os.Remove(path)
-
-	command := append(slices.Clone(shellArgs), path)
-
-	return runPlain(env, append(command, args...))
-}
-
-func runPlain(env *resolver.Environment, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("no command specified")
-	}
-
-	cmd := exec.Command(args[0], args[1:]...)
-
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	cmd.Env = BuildEnvironment(env)
-
-	return cmd.Run()
-}
-
 // BuildEnvironment is the process environment with the project's variables applied.
 func BuildEnvironment(env *resolver.Environment) []string {
 	environment := setEnvironmentVariable(
@@ -174,7 +327,32 @@ func BuildEnvironment(env *resolver.Environment) []string {
 		)
 	}
 
+	if len(env.PathPrepend) > 0 {
+		path := strings.Join(env.PathPrepend, string(os.PathListSeparator))
+
+		if current := environmentMap(environment)["PATH"]; current != "" {
+			path += string(os.PathListSeparator) + current
+		}
+
+		environment = setEnvironmentVariable(environment, "PATH", path)
+	}
+
 	return environment
+}
+
+// written after the user rc, since an rc that rebuilds PATH would otherwise drop the tool dirs
+func posixPathExport(env *resolver.Environment) string {
+	if len(env.PathPrepend) == 0 {
+		return ""
+	}
+
+	quoted := make([]string, len(env.PathPrepend))
+
+	for i, dir := range env.PathPrepend {
+		quoted[i] = shellQuote(dir)
+	}
+
+	return "export PATH=" + strings.Join(quoted, ":") + `:"$PATH"` + "\n"
 }
 
 func setEnvironmentVariable(

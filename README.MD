@@ -93,8 +93,11 @@ aliasctl shell      Start temporary shell environment
 aliasctl run        Run a command with the environment
 aliasctl export     Print the environment as shell code for eval
 aliasctl hook       Print a snippet that auto-activates on cd
-aliasctl allow      Trust a configuration for auto-activation
-aliasctl tools check  Check installed tools against the configured versions
+aliasctl allow      Trust a configuration for auto-activation (--list, --prune)
+aliasctl deny       Stop trusting a configuration
+aliasctl tools check    Check installed tools against the configured versions
+aliasctl tools install  Install missing or mismatched tools with mise
+aliasctl schema     Print the JSON schema for aliasctl.yaml
 ```
 
 `aliasctl run` also understands the configuration's names: an alias runs its command directly with any extra arguments appended, and a function runs in Bash with its arguments as `$1`, `$2`, …
@@ -109,6 +112,25 @@ Use a specific configuration:
 ```bash
 aliasctl --config dev.yaml shell
 ```
+
+### Seeing what runs
+
+`shell --print` and `run --print` show the generated command, the environment changes and every generated file, and exit without running anything. The temporary directory appears as `<tmp>`. Include this output when reporting a shell-specific problem.
+
+```bash
+aliasctl shell --print --shell zsh
+aliasctl run --print kgp -o wide
+```
+
+### Config format and editor support
+
+`version: 1` at the top of `aliasctl.yaml` is optional; a file written for a newer format fails with a message to upgrade AliasCtl instead of a confusing field error. For autocomplete and inline validation in editors that use the YAML language server (such as VS Code with the YAML extension), add this as the first line:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/melwintjoshy/aliasctl/main/schema/aliasctl.schema.json
+```
+
+`aliasctl schema` prints the same schema. `aliasctl validate` remains the source of truth.
 
 ## Tools
 
@@ -140,7 +162,8 @@ java       *             -       broken    /usr/bin/java           Unable to loc
 - **How the version is read:** `go`, `kubectl`, `helm` and `java` have built-in checks. Every other tool runs `<name> --version`, and the first version number in the output is used. Use `check:` when that is the wrong number (`swift --version` prints the driver version first) or the flag differs; it follows the same rules as an alias (no shell syntax, `${VAR}` allowed), and a relative path is taken from the directory holding `aliasctl.yaml`. Java 8 reports itself as `1.8.0`, so its rule is `1.8`, not `8`.
 - **Statuses:** `ok`, `missing` (not on `PATH`), `mismatch`, `broken` (installed but exits with an error or prints no version), or `timeout` (no answer within 5 seconds, or the tool's own `timeout:`).
 - **Where checks run:** `aliasctl tools check` exits non-zero on any problem, so it can gate CI. `aliasctl shell` prints a warning and opens anyway, after waiting for the checks, so a hanging tool delays the prompt by its timeout. `run`, `validate` and auto-activation never run checks, so scripts and prompts stay fast.
-- AliasCtl only checks tools; it does not install them yet.
+- **Installing:** `aliasctl tools install` uses [mise](https://mise.jdx.dev) to install every tool that is missing or the wrong version. It picks the highest mise release that matches the rule, shows the plan, and asks before installing (`--yes` to skip the question, `--dry-run` to only show the plan). Without a terminal and without `--yes` it refuses, since the repository's config decides what gets downloaded. Set `mise:` when mise knows the tool by another name, for example `mise: "aqua:hashicorp/terraform"`. mise's own config files are never changed.
+- **Using installed versions:** when mise is installed, `shell`, `run`, auto-activation and `tools check` put the matching mise-installed version of each tool first on `PATH`, choosing the highest installed version that fits the rule. Tools without a matching mise install use whatever is already on `PATH`. If your shell rc runs `mise activate`, mise rewrites `PATH` on every prompt and may override these entries; `aliasctl tools check` shows which binary is actually used.
 
 ## Auto-activation
 
@@ -152,10 +175,22 @@ eval "$(aliasctl hook zsh)"    # in ~/.zshrc
 ```
 
 - A configuration is only loaded after you trust it with `aliasctl allow`, which records its path and a hash of its content. An unknown or edited file is refused with a one-line hint, so cloning a repository never runs its configuration on the next prompt.
-- On leaving, project aliases, functions and variables are removed, and anything they shadowed (your own aliases, functions and previous variable values) is restored. The `(aliasctl:<name>)` prompt prefix is removed too.
-- The configuration is picked up again on the next directory change, not when the file is edited in place.
+- `aliasctl allow --list` shows every trusted configuration as `ok`, `changed` (edited since it was allowed) or `missing` (file deleted). `aliasctl allow --prune` forgets the missing ones, and `aliasctl deny` stops trusting one; it unloads on the next directory change.
+- On leaving, project aliases, functions and variables are removed, and anything they shadowed (your own aliases, functions and previous variable values) is restored. Tool directories are taken off `PATH` again, while anything you added to `PATH` meanwhile (a virtualenv, `nvm use`) stays. The `(aliasctl:<name>)` prompt prefix is removed too.
+- **Editing a loaded configuration:** the hook notices on the next prompt. The previous trusted version stays loaded and you get a one-line hint; after `aliasctl allow`, the next prompt loads the new version. Until then nothing runs per prompt: the hook only tries again after the file or the allow list changes.
 - `aliasctl shell` still works inside an auto-activated directory.
 - Only Bash and Zsh are supported for auto-activation.
+
+### What trust covers
+
+The hash covers the bytes of `aliasctl.yaml` and nothing else, and the file is loaded from exactly the bytes that were checked. Trust does not cover:
+
+- scripts or files that a function sources or runs
+- `${VAR}` values taken from your process environment instead of the config's `variables`
+- the tool binaries that aliases call, or what `mise:` backends download
+- anything the environment already had before the configuration loaded
+
+Review those the same way you would review any script you run from a repository.
 
 ## Architecture
 

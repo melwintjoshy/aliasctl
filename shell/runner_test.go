@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ func TestRunCommandPassesVariables(t *testing.T) {
 		"echo $ALIASCTL_TEST > " + outputFile.Name(),
 	}
 
-	if err := (bashRunner{}).Run(env, args); err != nil {
+	if err := Run(bashRunner{}, env, args); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -98,7 +99,7 @@ func TestRunCommandMissingCommand(t *testing.T) {
 		Name: "test",
 	}
 
-	err := (bashRunner{}).Run(
+	err := Run(bashRunner{},
 		env,
 		[]string{"this-command-definitely-does-not-exist"},
 	)
@@ -161,7 +162,7 @@ func TestRunShellExecutesFunctions(t *testing.T) {
 func TestRunBashRefusesNestedEnvironment(t *testing.T) {
 	t.Setenv("ALIASCTL_ENV", "outer")
 
-	err := (bashRunner{}).Start(&resolver.Environment{Name: "inner"}, "")
+	err := Start(bashRunner{}, &resolver.Environment{Name: "inner"}, "")
 	if err == nil {
 		t.Fatal("expected nested environment error")
 	}
@@ -329,7 +330,7 @@ func runToFileWith(t *testing.T, runner Runner, binary string, env *resolver.Env
 
 	outputPath := filepath.Join(t.TempDir(), "out")
 
-	if err := runner.Run(env, append(args, outputPath)); err != nil {
+	if err := Run(runner, env, append(args, outputPath)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -448,7 +449,7 @@ func TestRunCommandRunsFunctionWithArguments(t *testing.T) {
 		},
 	}
 
-	if err := (bashRunner{}).Run(env, []string{"greet", "big world", outputPath}); err != nil {
+	if err := Run(bashRunner{}, env, []string{"greet", "big world", outputPath}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -497,5 +498,88 @@ func TestRenderInteractiveRCIncludesBanner(t *testing.T) {
 
 	if !strings.Contains(rc, "Config:      /path/to/aliasctl.yaml") {
 		t.Fatal("expected config path in rendered rc banner")
+	}
+}
+
+// captures what a run writes to the terminal, since execute wires the child to os.Stdout
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	file, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer file.Close()
+
+	saved := os.Stdout
+	os.Stdout = file
+
+	defer func() { os.Stdout = saved }()
+
+	fn()
+
+	data, err := os.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(data)
+}
+
+func TestRunResolvesCommandOnPlanPath(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available")
+	}
+
+	// the tool only exists in the dir the plan prepends, never on aliasctl's own PATH
+	toolDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(toolDir, "fakego"), []byte("#!/bin/sh\necho \"fakego from plan $1\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	env := &resolver.Environment{Name: "test", PathPrepend: []string{toolDir}}
+
+	var runErr error
+
+	output := captureStdout(t, func() {
+		runErr = Run(bashRunner{}, env, []string{"fakego", "version"})
+	})
+
+	if runErr != nil {
+		t.Fatalf("run failed: %v", runErr)
+	}
+
+	if output != "fakego from plan version\n" {
+		t.Fatalf("expected the plan's tool to run, got %q", output)
+	}
+}
+
+func TestLookPath(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "tool"), []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "plain"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, err := lookPath("tool", "/nowhere:"+dir); err != nil || got != filepath.Join(dir, "tool") {
+		t.Fatalf("expected %s, got %q, %v", filepath.Join(dir, "tool"), got, err)
+	}
+
+	if _, err := lookPath("plain", dir); err == nil {
+		t.Fatal("expected a file without execute bits to be skipped")
+	}
+
+	if got, err := lookPath("./relative", dir); err != nil || got != "./relative" {
+		t.Fatalf("expected a path with a separator to pass through, got %q, %v", got, err)
+	}
+
+	if _, err := lookPath("missing", ""); !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

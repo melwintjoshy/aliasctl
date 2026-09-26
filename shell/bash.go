@@ -3,7 +3,7 @@ package shell
 import (
 	"fmt"
 	"maps"
-	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -75,48 +75,38 @@ func shellQuote(value string) string {
 
 type bashRunner struct{}
 
-func (bashRunner) Start(env *resolver.Environment, configPath string) error {
-	if err := checkNotNested(); err != nil {
-		return err
-	}
-
+func (bashRunner) StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error) {
 	script, err := renderInteractiveRC(env, configPath)
 	if err != nil {
-		return err
+		return Plan{}, err
 	}
 
-	rcPath, err := writeTempFile("", "aliasctl-*.bashrc", script)
-	if err != nil {
-		return err
-	}
-
-	defer os.Remove(rcPath)
-
-	return startInteractive(env, nil, "bash", "--noprofile", "--rcfile", rcPath, "-i")
+	return Plan{
+		Argv:  []string{"bash", "--noprofile", "--rcfile", filepath.Join(dir, "bashrc"), "-i"},
+		Env:   startEnvironment(env),
+		Files: []File{{Name: "bashrc", Content: script}},
+	}, nil
 }
 
-func (bashRunner) Run(env *resolver.Environment, args []string) error {
-	if len(args) == 0 {
-		return runPlain(env, args)
+func (bashRunner) RunPlan(env *resolver.Environment, args []string, dir string) (Plan, error) {
+	found, err := lookupCommand(env, args[0], false)
+	if err != nil {
+		return Plan{}, err
 	}
 
-	if found, err := lookupCommand(env, args[0], false); err != nil || !found {
-		if err != nil {
-			return err
-		}
-
-		return runPlain(env, args)
+	if !found {
+		return plainPlan(env, args), nil
 	}
 
 	definitions, err := (BashRenderer{}).Render(env)
 	if err != nil {
-		return err
+		return Plan{}, err
 	}
 
 	// the name is written literally since bash never alias-expands "$1"; names are validated
 	script := "shopt -s expand_aliases\n" + definitions + args[0] + ` "$@"` + "\n"
 
-	return runScript(env, []string{"bash", "--noprofile", "--norc"}, script, args[1:])
+	return scriptPlan(env, dir, "run.sh", script, []string{"bash", "--noprofile", "--norc"}, args[1:]), nil
 }
 
 // re-applied from PROMPT_COMMAND since prompts like starship rebuild PS1 before every prompt
@@ -150,6 +140,7 @@ func renderInteractiveRC(env *resolver.Environment, configPath string) (string, 
 	rc.WriteString(`if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; ` +
 		`elif [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile"; fi` + "\n")
 	rc.WriteString(definitions)
+	rc.WriteString(posixPathExport(env))
 
 	if configPath != "" {
 		rc.WriteString(RenderBanner(env, configPath))

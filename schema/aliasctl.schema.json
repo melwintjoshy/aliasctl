@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/melwintjoshy/aliasctl/main/schema/aliasctl.schema.json",
+  "title": "aliasctl.yaml",
+  "description": "Project-scoped aliases, functions, variables and required tools for AliasCtl. aliasctl validate is the source of truth; this schema is for editor help.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name"],
+  "anyOf": [
+    { "required": ["aliases"] },
+    { "required": ["functions"] },
+    { "required": ["functions_fish"] }
+  ],
+  "properties": {
+    "version": {
+      "description": "Config format version. Optional; a missing value means 1.",
+      "type": "integer",
+      "enum": [1]
+    },
+    "name": {
+      "description": "Environment name, shown in the prompt as (aliasctl:<name>).",
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "variables": {
+      "description": "Exported variables. Aliases can use them as ${NAME}.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "aliases": {
+      "description": "Structured commands, not shell code: no pipes, redirects, globs or $VAR. Use functions for shell code.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "functions": {
+      "description": "Bash/zsh function bodies.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "functions_fish": {
+      "description": "Fish function bodies; fish never runs the bodies under functions.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "tools": {
+      "description": "Tools the commands need, checked by aliasctl tools check.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/versionRule" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["version"],
+            "properties": {
+              "version": { "$ref": "#/$defs/versionRule" },
+              "check": {
+                "description": "Command that prints the version. Same rules as an alias.",
+                "type": "string",
+                "minLength": 1
+              },
+              "timeout": {
+                "description": "How long the check may take, e.g. 10s. Defaults to 5s.",
+                "type": "string",
+                "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+              },
+              "mise": {
+                "description": "mise tool name or backend used by aliasctl tools install, e.g. aqua:hashicorp/terraform. Defaults to the tool name.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:/._-]*$"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "versionRule": {
+      "description": "\"*\", a bare version that pins the parts it names (1.22 matches 1.22.x), or space-separated >= > <= < = comparisons.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

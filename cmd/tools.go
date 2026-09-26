@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/melwintjoshy/aliasctl/app"
+	"github.com/melwintjoshy/aliasctl/mise"
 	"github.com/melwintjoshy/aliasctl/resolver"
 	"github.com/melwintjoshy/aliasctl/shell"
 	"github.com/melwintjoshy/aliasctl/tools"
@@ -32,6 +33,8 @@ var toolsCheckCmd = &cobra.Command{
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
+		activateTools(cmd.ErrOrStderr(), env)
+
 		output := cmd.OutOrStdout()
 
 		if len(env.Tools) == 0 {
@@ -39,40 +42,7 @@ var toolsCheckCmd = &cobra.Command{
 			return nil
 		}
 
-		results := checkTools(env)
-
-		table := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
-
-		fmt.Fprintln(table, "TOOL\tWANT\tFOUND\tSTATUS\tPATH\tNOTE")
-
-		failed := false
-
-		for _, result := range results {
-			found := "-"
-			if result.Found != nil {
-				found = result.Found.String()
-			}
-
-			path := result.Path
-			if path == "" {
-				path = "-"
-			}
-
-			fmt.Fprintf(
-				table,
-				"%s\t%s\t%s\t%s\t%s\t%s\n",
-				result.Name,
-				result.Rule,
-				found,
-				result.Status,
-				path,
-				result.Detail,
-			)
-
-			failed = failed || result.Status != tools.StatusOK
-		}
-
-		table.Flush()
+		failed := printToolTable(output, checkTools(env))
 
 		// non-zero so it works as a ci gate; the table already says why
 		if failed {
@@ -81,6 +51,44 @@ var toolsCheckCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// printToolTable reports whether any tool is not ok.
+func printToolTable(w io.Writer, results []tools.Result) bool {
+	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintln(table, "TOOL\tWANT\tFOUND\tSTATUS\tPATH\tNOTE")
+
+	failed := false
+
+	for _, result := range results {
+		found := "-"
+		if result.Found != nil {
+			found = result.Found.String()
+		}
+
+		path := result.Path
+		if path == "" {
+			path = "-"
+		}
+
+		fmt.Fprintf(
+			table,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			result.Name,
+			result.Rule,
+			found,
+			result.Status,
+			path,
+			result.Detail,
+		)
+
+		failed = failed || result.Status != tools.StatusOK
+	}
+
+	table.Flush()
+
+	return failed
 }
 
 func checkTools(env *resolver.Environment) []tools.Result {
@@ -115,5 +123,16 @@ func warnToolProblems(w io.Writer, env *resolver.Environment) {
 
 func init() {
 	toolsCmd.AddCommand(toolsCheckCmd)
+	toolsCmd.AddCommand(toolsInstallCmd)
 	rootCmd.AddCommand(toolsCmd)
+}
+
+// swapped in tests; the real one runs the mise binary
+var miseBackend mise.Backend = mise.CLI{}
+
+// uses mise-installed tool versions when there are any; a mise problem is reported, never fatal
+func activateTools(w io.Writer, env *resolver.Environment) {
+	if err := app.ActivateTools(env, miseBackend); err != nil {
+		fmt.Fprintf(w, "aliasctl: could not use mise tool versions: %v\n", err)
+	}
 }

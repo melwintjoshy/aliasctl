@@ -17,6 +17,9 @@ type ToolRequirement struct {
 
 	// zero means the checker's default
 	Timeout time.Duration
+
+	// name mise knows the tool by
+	Mise string
 }
 
 // tools whose --version flag doesn't work or prints the wrong thing
@@ -60,8 +63,17 @@ func resolveTools(cfg *config.Config) ([]ToolRequirement, error) {
 			Rule:    spec.Version,
 			Check:   check,
 			Timeout: timeout,
+			Mise:    miseName(name, spec.Mise),
 		})
 	}
 
 	return requirements, nil
+}
+
+func miseName(name, override string) string {
+	if override != "" {
+		return override
+	}
+
+	return name
 }

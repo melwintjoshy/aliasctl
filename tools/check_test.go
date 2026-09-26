@@ -13,6 +13,10 @@ import (
 	"github.com/melwintjoshy/aliasctl/versions"
 )
 
+// macOS scans each new executable on first run, and under a busy parallel test run that alone
+// can pass the 5s default; tests that aren't about timing use this instead
+const testTimeout = time.Minute
+
 // writes a fake tool as a tiny sh script into dir
 func writeTool(t *testing.T, dir, name, body string) {
 	t.Helper()
@@ -56,7 +60,7 @@ func TestCheckStatuses(t *testing.T) {
 		requirement("noexec", "*"),
 	}
 
-	results := Check(context.Background(), requirements, []string{"PATH=" + dir})
+	results := Checker{Timeout: testTimeout}.Check(context.Background(), requirements, []string{"PATH=" + dir})
 
 	got := make(map[string]Status)
 
@@ -91,7 +95,7 @@ func TestCheckReportsDetails(t *testing.T) {
 	writeTool(t, dir, "good", `echo "v1.22.4"`)
 	writeTool(t, dir, "failing", `echo "Unable to locate a Java Runtime." >&2; exit 1`)
 
-	results := Check(
+	results := Checker{Timeout: testTimeout}.Check(
 		context.Background(),
 		[]resolver.ToolRequirement{requirement("failing", "*"), requirement("good", "1.22")},
 		[]string{"PATH=" + dir},
@@ -139,7 +143,7 @@ func TestCheckUsesProjectEnvironment(t *testing.T) {
 	// the probe must see project variables, e.g. a KUBECONFIG the tool reads
 	writeTool(t, dir, "ctx", `echo "ctx $TOOL_VERSION"`)
 
-	results := Check(
+	results := Checker{Timeout: testTimeout}.Check(
 		context.Background(),
 		[]resolver.ToolRequirement{requirement("ctx", "3.1")},
 		[]string{"PATH=" + dir, "TOOL_VERSION=3.1.0"},
@@ -194,7 +198,7 @@ func TestCheckResolvesRelativeCheckAgainstDir(t *testing.T) {
 	}}
 
 	// the working directory is somewhere else, as when running from a subdirectory
-	results := Checker{Timeout: DefaultTimeout, Dir: project}.Check(
+	results := Checker{Timeout: testTimeout, Dir: project}.Check(
 		context.Background(),
 		requirements,
 		[]string{"PATH=" + t.TempDir()},
@@ -215,7 +219,7 @@ func TestCheckRunsFromDir(t *testing.T) {
 
 	writeTool(t, dir, "here", `echo "here 1.0"; pwd`)
 
-	results := Checker{Timeout: DefaultTimeout, Dir: project}.Check(
+	results := Checker{Timeout: testTimeout, Dir: project}.Check(
 		context.Background(),
 		[]resolver.ToolRequirement{requirement("here", "*")},
 		[]string{"PATH=" + dir},

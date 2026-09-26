@@ -21,6 +21,16 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
+	return Parse(data)
+}
+
+// Parse decodes config bytes; callers that check the bytes first (trust) parse exactly what they checked.
+func Parse(data []byte) (*Config, error) {
+	// checked before the strict decode, so a newer file says "upgrade" instead of "unknown field"
+	if err := checkFormatVersion(data); err != nil {
+		return nil, err
+	}
+
 	var cfg Config
 
 	// reject unknown keys so a typo like "alias:" fails instead of being ignored
@@ -62,4 +72,30 @@ func FindConfig() (string, error) {
 
 func (Loader) Load(path string) (*Config, error) {
 	return Load(path)
+}
+
+func checkFormatVersion(data []byte) error {
+	var header struct {
+		Version any `yaml:"version"`
+	}
+
+	// a broken document is reported by the strict decode with its line number
+	if err := yaml.Unmarshal(data, &header); err != nil || header.Version == nil {
+		return nil
+	}
+
+	version, ok := header.Version.(int)
+	if !ok || version < 1 {
+		return fmt.Errorf("version must be a positive whole number, got %v", header.Version)
+	}
+
+	if version > FormatVersion {
+		return fmt.Errorf(
+			"aliasctl.yaml uses format version %d; this aliasctl supports %d, upgrade it",
+			version,
+			FormatVersion,
+		)
+	}
+
+	return nil
 }

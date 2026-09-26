@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -91,16 +92,12 @@ end
 
 type fishRunner struct{}
 
-func (fishRunner) Start(env *resolver.Environment, configPath string) error {
-	if err := checkNotNested(); err != nil {
-		return err
-	}
-
+func (fishRunner) StartPlan(env *resolver.Environment, configPath, dir string) (Plan, error) {
 	warnBashOnlyFunctions(env)
 
 	definitions, err := (FishRenderer{}).Render(env)
 	if err != nil {
-		return err
+		return Plan{}, err
 	}
 
 	bannerScript := ""
@@ -108,38 +105,34 @@ func (fishRunner) Start(env *resolver.Environment, configPath string) error {
 		bannerScript = RenderBanner(env, configPath)
 	}
 
-	path, err := writeTempFile("", "aliasctl-*.fish", definitions+bannerScript+fishPromptHook)
-	if err != nil {
-		return err
-	}
-
-	defer os.Remove(path)
+	path := filepath.Join(dir, "init.fish")
 
 	// --init-command runs after the user's config.fish, so project definitions win
-	return startInteractive(env, nil, "fish", "-i", "--init-command", "source "+fishQuote(path))
+	return Plan{
+		Argv:  []string{"fish", "-i", "--init-command", "source " + fishQuote(path)},
+		Env:   startEnvironment(env),
+		Files: []File{{Name: "init.fish", Content: definitions + fishPathSet(env) + bannerScript + fishPromptHook}},
+	}, nil
 }
 
-func (fishRunner) Run(env *resolver.Environment, args []string) error {
-	if len(args) == 0 {
-		return runPlain(env, args)
+func (fishRunner) RunPlan(env *resolver.Environment, args []string, dir string) (Plan, error) {
+	found, err := lookupCommand(env, args[0], true)
+	if err != nil {
+		return Plan{}, err
 	}
 
-	if found, err := lookupCommand(env, args[0], true); err != nil || !found {
-		if err != nil {
-			return err
-		}
-
-		return runPlain(env, args)
+	if !found {
+		return plainPlan(env, args), nil
 	}
 
 	definitions, err := (FishRenderer{}).Render(env)
 	if err != nil {
-		return err
+		return Plan{}, err
 	}
 
 	script := definitions + args[0] + " $argv\n"
 
-	return runScript(env, []string{"fish", "--no-config"}, script, args[1:])
+	return scriptPlan(env, dir, "run.fish", script, []string{"fish", "--no-config"}, args[1:]), nil
 }
 
 func warnBashOnlyFunctions(env *resolver.Environment) {
@@ -152,4 +145,18 @@ func warnBashOnlyFunctions(env *resolver.Environment) {
 			)
 		}
 	}
+}
+
+func fishPathSet(env *resolver.Environment) string {
+	if len(env.PathPrepend) == 0 {
+		return ""
+	}
+
+	quoted := make([]string, len(env.PathPrepend))
+
+	for i, dir := range env.PathPrepend {
+		quoted[i] = fishQuote(dir)
+	}
+
+	return "set -gx PATH " + strings.Join(quoted, " ") + " $PATH\n"
 }

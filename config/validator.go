@@ -56,6 +56,10 @@ func (c *Config) Validate() error {
 		if err := validateTimeout(c.Tools[name].Timeout); err != nil {
 			return fmt.Errorf("invalid tool %q: %w", name, err)
 		}
+
+		if spec := c.Tools[name].Mise; spec != "" && !miseNamePattern.MatchString(spec) {
+			return fmt.Errorf("invalid tool %q: invalid mise name %q", name, spec)
+		}
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(c.Variables)) {
@@ -90,6 +94,9 @@ var (
 
 	// binary names like python3 and docker-compose
 	toolNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+	// a mise tool name or backend:owner/repo; no @, the version comes from the rule
+	miseNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:/._-]*$`)
 )
 
 func isValidIdentifier(name string) bool {

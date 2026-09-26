@@ -50,7 +50,7 @@ func TestHookIsInertInsideExplicitShell(t *testing.T) {
 }
 
 func TestRenderExportRejectsFish(t *testing.T) {
-	if _, err := RenderExport(&resolver.Environment{Name: "x"}, "fish", "/x"); err == nil {
+	if _, err := RenderExport(&resolver.Environment{Name: "x"}, "fish", "/x", "", ""); err == nil {
 		t.Fatal("expected fish to be rejected for export")
 	}
 
@@ -75,7 +75,7 @@ func TestRenderExportUnloadRestoresPreviousState(t *testing.T) {
 		},
 	}
 
-	script, err := RenderExport(env, "bash", "/p/aliasctl.yaml")
+	script, err := RenderExport(env, "bash", "/p/aliasctl.yaml", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
