@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	"github.com/spf13/cobra"
+
+	"github.com/melwintjoshy/aliasctl/internal/buildinfo"
 )
 
 // ErrReported means the command already told the user what went wrong.
@@ -23,6 +25,9 @@ func Execute() error {
 }
 
 func init() {
+	// cobra adds --version from this and prints "aliasctl version <string>"
+	rootCmd.Version = buildinfo.String()
+
 	rootCmd.PersistentFlags().StringVar(
 		&configPath,
 		"config",
