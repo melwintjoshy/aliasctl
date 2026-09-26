@@ -51,6 +51,11 @@ func addShellFlag(command *cobra.Command) {
 		shell.DefaultShell(),
 		"Shell to use: bash, zsh or fish (default from $SHELL)",
 	)
+
+	// the values are fixed, so every command with the flag completes them
+	_ = command.RegisterFlagCompletionFunc("shell", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return shell.Supported, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // prints what would run instead of running it, for debugging and bug reports
