@@ -6,12 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func runRoot(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 
 	var output bytes.Buffer
+
+	resetFlags(rootCmd)
 
 	rootCmd.SetOut(&output)
 	rootCmd.SetArgs(args)
@@ -25,6 +30,21 @@ func runRoot(t *testing.T, args ...string) (string, error) {
 	err := rootCmd.Execute()
 
 	return output.String(), err
+}
+
+// cobra keeps flag values between Execute calls, so each run starts from the defaults
+func resetFlags(command *cobra.Command) {
+	reset := func(flag *pflag.Flag) {
+		flag.Value.Set(flag.DefValue)
+		flag.Changed = false
+	}
+
+	command.Flags().VisitAll(reset)
+	command.PersistentFlags().VisitAll(reset)
+
+	for _, child := range command.Commands() {
+		resetFlags(child)
+	}
 }
 
 func writeTestConfig(t *testing.T, content string) string {

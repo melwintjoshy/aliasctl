@@ -186,3 +186,84 @@ func IsAllowed(path string) (bool, error) {
 
 	return ok, err
 }
+
+// Deny forgets the config; it reports false when it was not allowed.
+func Deny(path string) (string, bool, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, err
+	}
+
+	var removed bool
+
+	err = withAllowList(true, func(allowed map[string]string) (bool, error) {
+		_, removed = allowed[absolute]
+		delete(allowed, absolute)
+
+		return removed, nil
+	})
+
+	return absolute, removed, err
+}
+
+type TrustStatus string
+
+const (
+	TrustOK      TrustStatus = "ok"
+	TrustChanged TrustStatus = "changed"
+	TrustMissing TrustStatus = "missing"
+)
+
+type AllowedEntry struct {
+	Path   string
+	Status TrustStatus
+}
+
+// ListAllowed reports every trusted config and whether it still matches what was allowed.
+func ListAllowed() ([]AllowedEntry, error) {
+	var entries []AllowedEntry
+
+	err := withAllowList(false, func(allowed map[string]string) (bool, error) {
+		for _, configPath := range slices.Sorted(maps.Keys(allowed)) {
+			entries = append(entries, AllowedEntry{
+				Path:   configPath,
+				Status: trustStatus(configPath, allowed[configPath]),
+			})
+		}
+
+		return false, nil
+	})
+
+	return entries, err
+}
+
+func trustStatus(configPath, hash string) TrustStatus {
+	_, current, err := hashConfig(configPath)
+
+	switch {
+	case os.IsNotExist(err):
+		return TrustMissing
+	case err != nil || current != hash:
+		return TrustChanged
+	}
+
+	return TrustOK
+}
+
+// Prune drops entries whose config file no longer exists and returns their paths.
+func Prune() ([]string, error) {
+	var pruned []string
+
+	err := withAllowList(true, func(allowed map[string]string) (bool, error) {
+		for _, configPath := range slices.Sorted(maps.Keys(allowed)) {
+			if trustStatus(configPath, allowed[configPath]) == TrustMissing {
+				pruned = append(pruned, configPath)
+				delete(allowed, configPath)
+			}
+		}
+
+		return len(pruned) > 0, nil
+	})
+
+	return pruned, err
+}

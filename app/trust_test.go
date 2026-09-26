@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 )
@@ -128,5 +129,66 @@ func TestAllowListIsPrivate(t *testing.T) {
 
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("expected 0600, got %o", info.Mode().Perm())
+	}
+}
+
+func TestDenyListAndPrune(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	dir := t.TempDir()
+
+	kept := writeConfigFile(t, dir, "kept.yaml", "name: kept\n")
+	edited := writeConfigFile(t, dir, "edited.yaml", "name: edited\n")
+	deleted := writeConfigFile(t, dir, "deleted.yaml", "name: deleted\n")
+	denied := writeConfigFile(t, dir, "denied.yaml", "name: denied\n")
+
+	for _, path := range []string{kept, edited, deleted, denied} {
+		if _, err := Allow(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, removed, err := Deny(denied); err != nil || !removed {
+		t.Fatalf("expected deny to remove the entry, removed=%v err=%v", removed, err)
+	}
+
+	if _, removed, err := Deny(denied); err != nil || removed {
+		t.Fatalf("expected a second deny to be a no-op, removed=%v err=%v", removed, err)
+	}
+
+	writeConfigFile(t, dir, "edited.yaml", "name: edited again\n")
+
+	if err := os.Remove(deleted); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := ListAllowed()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []AllowedEntry{
+		{Path: deleted, Status: TrustMissing},
+		{Path: edited, Status: TrustChanged},
+		{Path: kept, Status: TrustOK},
+	}
+
+	if !reflect.DeepEqual(entries, expected) {
+		t.Fatalf("expected %+v, got %+v", expected, entries)
+	}
+
+	pruned, err := Prune()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(pruned, []string{deleted}) {
+		t.Fatalf("expected only the deleted config to be pruned, got %v", pruned)
+	}
+
+	entries, _ = ListAllowed()
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries after prune, got %+v", entries)
 	}
 }
