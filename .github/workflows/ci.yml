@@ -38,5 +38,36 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # app/ and tools/ carry unix and non-unix build-tag files, so the split is checked on every run
+      - name: Build (windows)
+        run: go build ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
       - name: Test
         run: go test -race -count=1 -timeout=120s ./...
+
+  # proves .goreleaser.yaml and the cross-builds on every change, so a tag push never fails on config
+  release-dry-run:
+    name: Release dry run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Snapshot release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean

@@ -22,28 +22,28 @@ func TestCheckKillsGrandchildrenOnTimeout(t *testing.T) {
 	// the wrapper backgrounds a sleeper and records its pid, like a launcher script would
 	writeTool(t, dir, "wrapper", "/bin/sleep 60 &\necho $! > "+pidFile+"\nwait")
 
-	// generous enough for sh to fork the sleeper before the group is killed
-	results := Checker{Timeout: time.Second}.Check(
-		context.Background(),
-		[]resolver.ToolRequirement{requirement("wrapper", "*")},
-		[]string{"PATH=" + dir},
-	)
+	// the deadline is tripped by hand once the sleeper exists, so a slow sh can never lose the race
+	ctx := &manualDeadline{Context: context.Background(), done: make(chan struct{})}
 
-	if results[0].Status != StatusTimeout {
-		t.Fatalf("expected a timeout, got %+v", results[0])
-	}
+	results := make(chan []Result, 1)
 
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	go func() {
+		results <- Checker{Timeout: testTimeout}.Check(
+			ctx,
+			[]resolver.ToolRequirement{requirement("wrapper", "*")},
+			[]string{"PATH=" + dir},
+		)
+	}()
 
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	pid := waitForPid(t, pidFile)
 
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+
+	ctx.expire()
+
+	if result := (<-results)[0]; result.Status != StatusTimeout {
+		t.Fatalf("expected a timeout, got %+v", result)
+	}
 
 	// the kill is asynchronous, so allow a moment for the sleeper to disappear
 	deadline := time.Now().Add(2 * time.Second)
@@ -58,3 +58,43 @@ func TestCheckKillsGrandchildrenOnTimeout(t *testing.T) {
 
 	t.Fatalf("grandchild %d survived the timeout", pid)
 }
+
+// polls until the wrapper has written a whole line, which under a loaded suite can take a while
+func waitForPid(t *testing.T, path string) int {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(path); err == nil && strings.HasSuffix(string(data), "\n") {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+				return pid
+			}
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("wrapper never recorded the sleeper's pid")
+
+	return 0
+}
+
+// a context whose deadline passes when the test says so; WithTimeout inherits it as DeadlineExceeded
+type manualDeadline struct {
+	context.Context
+	done chan struct{}
+}
+
+func (m *manualDeadline) Done() <-chan struct{} { return m.done }
+
+func (m *manualDeadline) Err() error {
+	select {
+	case <-m.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
+func (m *manualDeadline) expire() { close(m.done) }

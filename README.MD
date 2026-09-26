@@ -6,6 +6,18 @@ AliasCtl lets you define variables, aliases, and shell functions in `aliasctl.ya
 
 ## Installation
 
+### Release binaries
+
+Download the archive for your platform from the [releases page](https://github.com/melwintjoshy/aliasctl/releases) and put the binary on your `PATH`:
+
+```bash
+tar -xzf aliasctl_*_darwin_arm64.tar.gz
+sudo mv aliasctl /usr/local/bin/
+aliasctl --version
+```
+
+`checksums.txt` on each release lists the SHA-256 of every archive.
+
 ### From source
 
 ```bash
@@ -98,6 +110,7 @@ aliasctl deny       Stop trusting a configuration
 aliasctl tools check    Check installed tools against the configured versions
 aliasctl tools install  Install missing or mismatched tools with mise
 aliasctl schema     Print the JSON schema for aliasctl.yaml
+aliasctl completion bash|zsh|fish   Print shell completion code
 ```
 
 `aliasctl run` also understands the configuration's names: an alias runs its command directly with any extra arguments appended, and a function runs in Bash with its arguments as `$1`, `$2`, …
@@ -112,6 +125,16 @@ Use a specific configuration:
 ```bash
 aliasctl --config dev.yaml shell
 ```
+
+### Shell completion
+
+```bash
+source <(aliasctl completion bash)                                  # ~/.bashrc
+source <(aliasctl completion zsh)                                   # ~/.zshrc, after compinit
+aliasctl completion fish > ~/.config/fish/completions/aliasctl.fish
+```
+
+`aliasctl run <TAB>` then offers the aliases and functions from the current configuration.
 
 ### Seeing what runs
 
