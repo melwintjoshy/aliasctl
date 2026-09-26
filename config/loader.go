@@ -21,6 +21,11 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
+	return Parse(data)
+}
+
+// Parse decodes config bytes; callers that check the bytes first (trust) parse exactly what they checked.
+func Parse(data []byte) (*Config, error) {
 	var cfg Config
 
 	// reject unknown keys so a typo like "alias:" fails instead of being ignored

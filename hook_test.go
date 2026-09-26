@@ -61,7 +61,8 @@ prompt=base>
 after edit env=none
 `
 
-func runHookScenario(t *testing.T, shellName string) {
+// starts an interactive shell whose rc evals the hook, in a temp HOME with one project
+func runHookShell(t *testing.T, shellName, projectConfig, script string) (string, string, string) {
 	t.Helper()
 
 	if _, err := exec.LookPath(shellName); err != nil {
@@ -77,7 +78,7 @@ func runHookScenario(t *testing.T, shellName string) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(project, "aliasctl.yaml"), []byte(hookProjectConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(project, "aliasctl.yaml"), []byte(projectConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,7 +95,7 @@ func runHookScenario(t *testing.T, shellName string) {
 		t.Fatal(err)
 	}
 
-	script := strings.ReplaceAll(hookScript, "$PROMPT_VALUE", "$"+promptVariable)
+	script = strings.ReplaceAll(script, "$PROMPT_VALUE", "$"+promptVariable)
 
 	args := []string{"-i", "-c", script}
 	if shellName == "bash" {
@@ -108,6 +109,7 @@ func runHookScenario(t *testing.T, shellName string) {
 		os.Environ(),
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+		"XDG_STATE_HOME="+filepath.Join(home, ".local", "state"),
 		"ALIASCTL_BIN="+binary,
 		"PROJECT="+project,
 		"ALIASCTL_ENV=",
@@ -125,15 +127,64 @@ func runHookScenario(t *testing.T, shellName string) {
 		t.Fatalf("%s failed: %v\n%s%s", shellName, err, output, stderr.String())
 	}
 
+	return string(output), stderr.String(), project
+}
+
+func runHookScenario(t *testing.T, shellName string) {
+	t.Helper()
+
+	output, stderr, project := runHookShell(t, shellName, hookProjectConfig, hookScript)
+
 	// the untrusted hint is printed for the first visit and again after the edit, never on quiet retries
 	hint := "aliasctl: " + filepath.Join(project, "aliasctl.yaml") + " is not allowed"
 
-	if strings.Count(stderr.String(), hint) != 2 {
-		t.Fatalf("expected the hint twice, stderr:\n%s", stderr.String())
+	if strings.Count(stderr, hint) != 2 {
+		t.Fatalf("expected the hint twice, stderr:\n%s", stderr)
 	}
 
-	if string(output) != hookExpected {
-		t.Fatalf("expected:\n%s\ngot:\n%s\nstderr:\n%s", hookExpected, output, stderr.String())
+	if output != hookExpected {
+		t.Fatalf("expected:\n%s\ngot:\n%s\nstderr:\n%s", hookExpected, output, stderr)
+	}
+}
+
+// sleep 1 because bash 3.2 compares mtimes in whole seconds
+const hookEditScript = `
+"$ALIASCTL_BIN" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
+cd "$PROJECT"; __aliasctl_hook
+eval hi
+sleep 1
+printf 'name: demo\naliases:\n  hi: "echo edited-hi"\n' > "$PROJECT/aliasctl.yaml"
+__aliasctl_hook; eval hi
+__aliasctl_hook; eval hi
+"$ALIASCTL_BIN" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
+__aliasctl_hook; eval hi
+echo "prompt=$PROMPT_VALUE"
+cd "$HOME"; __aliasctl_hook; eval hi
+echo "stamps=$(ls "$HOME/.local/state/aliasctl/stamps" | wc -l | tr -d ' ')"
+`
+
+const hookEditExpected = `project-hi
+project-hi
+project-hi
+edited-hi
+prompt=(aliasctl:demo) base> 
+user-hi
+stamps=0
+`
+
+func runHookEditScenario(t *testing.T, shellName string) {
+	t.Helper()
+
+	output, stderr, project := runHookShell(t, shellName, hookProjectConfig, hookEditScript)
+
+	hint := "aliasctl: " + filepath.Join(project, "aliasctl.yaml") + " changed; keeping the previous version"
+
+	if strings.Count(stderr, hint) != 1 {
+		t.Fatalf("expected the edit hint exactly once, stderr:\n%s", stderr)
+	}
+
+	if output != hookEditExpected {
+		t.Fatalf("expected:\n%s\ngot:\n%s\nstderr:\n%s", hookEditExpected, output, stderr)
 	}
 }
 
@@ -143,4 +194,12 @@ func TestHookBash(t *testing.T) {
 
 func TestHookZsh(t *testing.T) {
 	runHookScenario(t, "zsh")
+}
+
+func TestHookEditBash(t *testing.T) {
+	runHookEditScenario(t, "bash")
+}
+
+func TestHookEditZsh(t *testing.T) {
+	runHookEditScenario(t, "zsh")
 }

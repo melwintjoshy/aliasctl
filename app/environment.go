@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/melwintjoshy/aliasctl/config"
@@ -15,9 +17,19 @@ func LoadEnvironment(configPath string) (*resolver.Environment, error) {
 		return nil, err
 	}
 
-	loader := config.Loader{}
+	data, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"could not load configuration: %w",
+			err,
+		)
+	}
 
-	cfg, err := loader.Load(resolvedPath)
+	return environmentFromData(resolvedPath, data)
+}
+
+func environmentFromData(resolvedPath string, data []byte) (*resolver.Environment, error) {
+	cfg, err := config.Parse(data)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"could not load configuration: %w",
@@ -46,4 +58,31 @@ func LoadEnvironment(configPath string) (*resolver.Environment, error) {
 	env.Dir = filepath.Dir(absolutePath)
 
 	return env, nil
+}
+
+var ErrNotAllowed = errors.New("configuration is not allowed")
+
+// LoadTrustedEnvironment reads the config once and loads it only if those exact bytes are allowed,
+// so an edit between the trust check and the load can never slip through.
+func LoadTrustedEnvironment(configPath string) (*resolver.Environment, error) {
+	absolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(absolute)
+	if err != nil {
+		return nil, fmt.Errorf("could not load configuration: %w", err)
+	}
+
+	allowed, err := isAllowedContent(absolute, data)
+	if err != nil {
+		return nil, fmt.Errorf("could not check trust: %w", err)
+	}
+
+	if !allowed {
+		return nil, ErrNotAllowed
+	}
+
+	return environmentFromData(absolute, data)
 }

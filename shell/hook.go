@@ -22,7 +22,8 @@ func checkHookShell(name string) error {
 }
 
 // RenderExport prints definitions for eval, plus ALIASCTL_UNLOAD to undo them and restore what they shadowed.
-func RenderExport(env *resolver.Environment, shellName, configPath string) (string, error) {
+// stampPath, when set, lets the hook notice edits to the config while it is loaded.
+func RenderExport(env *resolver.Environment, shellName, configPath, stampPath string) (string, error) {
 	if err := checkHookShell(shellName); err != nil {
 		return "", err
 	}
@@ -89,6 +90,11 @@ func RenderExport(env *resolver.Environment, shellName, configPath string) (stri
 	fmt.Fprintf(&output, "ALIASCTL_CONFIG=%s\n", shellQuote(configPath))
 	fmt.Fprintf(&output, "__aliasctl_prefix=%s\n", shellQuote("(aliasctl:"+promptSafeName(env.Name)+") "))
 
+	if stampPath != "" {
+		fmt.Fprintf(&output, "__aliasctl_stamp=%s\n", shellQuote(stampPath))
+		fmt.Fprintf(&output, "ALIASCTL_UNLOAD+=%s$'\\n'\n", shellQuote("rm -f -- "+shellQuote(stampPath)))
+	}
+
 	return output.String(), nil
 }
 
@@ -120,7 +126,7 @@ const hookFunction = `__aliasctl_hook() {
       __PROMPT__="${__PROMPT__#"$__aliasctl_prefix"}"
     fi
 
-    unset ALIASCTL_ENV ALIASCTL_HOOK ALIASCTL_CONFIG ALIASCTL_UNLOAD __aliasctl_prefix
+    unset ALIASCTL_ENV ALIASCTL_HOOK ALIASCTL_CONFIG ALIASCTL_UNLOAD __aliasctl_prefix __aliasctl_stamp __aliasctl_edit_hinted
 
     if [ -n "$__aliasctl_found" ]; then
       local __aliasctl_quiet=""
@@ -133,6 +139,20 @@ const hookFunction = `__aliasctl_hook() {
       else
         __aliasctl_denied="$__aliasctl_found"
       fi
+    fi
+
+  # edited in place: reload once trusted again, keep the old version until then
+  # bash 3.2 compares whole seconds, so an edit in the same second as loading can be missed
+  elif [ -n "${__aliasctl_stamp:-}" ] && [ "$ALIASCTL_CONFIG" -nt "$__aliasctl_stamp" ]; then
+    local __aliasctl_reload
+    if __aliasctl_reload="$(__BINARY__ --config "$ALIASCTL_CONFIG" export --shell __SHELL__ --quiet)"; then
+      eval "$ALIASCTL_UNLOAD"
+      __PROMPT__="${__PROMPT__#"$__aliasctl_prefix"}"
+      eval "$__aliasctl_reload"
+      unset __aliasctl_edit_hinted
+    elif [ "${__aliasctl_edit_hinted:-}" != "$ALIASCTL_CONFIG" ]; then
+      printf 'aliasctl: %s changed; keeping the previous version, run "aliasctl allow" to load it\n' "$ALIASCTL_CONFIG" >&2
+      __aliasctl_edit_hinted="$ALIASCTL_CONFIG"
     fi
   fi
 

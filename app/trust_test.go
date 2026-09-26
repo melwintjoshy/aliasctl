@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -190,5 +191,34 @@ func TestDenyListAndPrune(t *testing.T) {
 
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries after prune, got %+v", entries)
+	}
+}
+
+func TestLoadTrustedEnvironment(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	path := writeConfigFile(t, t.TempDir(), "aliasctl.yaml", "name: a\naliases:\n  hi: echo trusted\n")
+
+	if _, err := LoadTrustedEnvironment(path); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("expected an unknown config to be refused, got %v", err)
+	}
+
+	if _, err := Allow(path); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := LoadTrustedEnvironment(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if env.Aliases["hi"].Args[0] != "trusted" {
+		t.Fatalf("unexpected alias %+v", env.Aliases["hi"])
+	}
+
+	writeConfigFile(t, filepath.Dir(path), "aliasctl.yaml", "name: a\naliases:\n  hi: echo edited\n")
+
+	if _, err := LoadTrustedEnvironment(path); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("expected an edited config to be refused, got %v", err)
 	}
 }

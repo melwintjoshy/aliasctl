@@ -40,9 +40,12 @@ func hashConfig(path string) (string, string, error) {
 		return "", "", err
 	}
 
-	sum := sha256.Sum256(data)
+	return absolute, hashContent(data), nil
+}
 
-	return absolute, hex.EncodeToString(sum[:]), nil
+func hashContent(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // withAllowList runs fn on the list under a lock and saves it when fn reports a change.
@@ -172,14 +175,25 @@ func Allow(path string) (string, error) {
 }
 
 func IsAllowed(path string) (bool, error) {
-	absolute, hash, err := hashConfig(path)
+	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return false, err
 	}
 
+	data, err := os.ReadFile(absolute)
+	if err != nil {
+		return false, err
+	}
+
+	return isAllowedContent(absolute, data)
+}
+
+func isAllowedContent(absolute string, data []byte) (bool, error) {
+	hash := hashContent(data)
+
 	var ok bool
 
-	err = withAllowList(false, func(allowed map[string]string) (bool, error) {
+	err := withAllowList(false, func(allowed map[string]string) (bool, error) {
 		ok = allowed[absolute] == hash
 		return false, nil
 	})

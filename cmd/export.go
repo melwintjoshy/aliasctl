@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,13 +31,18 @@ var exportCmd = &cobra.Command{
 			return err
 		}
 
-		allowed, err := app.IsAllowed(absolutePath)
+		// stamped before reading, so an edit made while loading still counts as newer
+		stamp, err := app.NewStamp()
 		if err != nil {
-			return fmt.Errorf("could not check trust: %w", err)
+			return err
 		}
 
+		env, err := app.LoadTrustedEnvironment(absolutePath)
+
 		// without this, cloning a repo would run its config on the next prompt
-		if !allowed {
+		if errors.Is(err, app.ErrNotAllowed) {
+			os.Remove(stamp)
+
 			if !exportQuiet {
 				fmt.Fprintf(
 					os.Stderr,
@@ -48,13 +54,14 @@ var exportCmd = &cobra.Command{
 			return ErrReported
 		}
 
-		env, err := app.LoadEnvironment(absolutePath)
 		if err != nil {
+			os.Remove(stamp)
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
-		script, err := shell.RenderExport(env, shellName, absolutePath)
+		script, err := shell.RenderExport(env, shellName, absolutePath, stamp)
 		if err != nil {
+			os.Remove(stamp)
 			return err
 		}
 
