@@ -35,7 +35,7 @@ func TestRunCommandPassesVariables(t *testing.T) {
 		"echo $ALIASCTL_TEST > " + outputFile.Name(),
 	}
 
-	if err := (bashRunner{}).Run(env, args); err != nil {
+	if err := Run(bashRunner{}, env, args); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestRunCommandMissingCommand(t *testing.T) {
 		Name: "test",
 	}
 
-	err := (bashRunner{}).Run(
+	err := Run(bashRunner{},
 		env,
 		[]string{"this-command-definitely-does-not-exist"},
 	)
@@ -161,7 +161,7 @@ func TestRunShellExecutesFunctions(t *testing.T) {
 func TestRunBashRefusesNestedEnvironment(t *testing.T) {
 	t.Setenv("ALIASCTL_ENV", "outer")
 
-	err := (bashRunner{}).Start(&resolver.Environment{Name: "inner"})
+	err := Start(bashRunner{}, &resolver.Environment{Name: "inner"})
 	if err == nil {
 		t.Fatal("expected nested environment error")
 	}
@@ -329,7 +329,7 @@ func runToFileWith(t *testing.T, runner Runner, binary string, env *resolver.Env
 
 	outputPath := filepath.Join(t.TempDir(), "out")
 
-	if err := runner.Run(env, append(args, outputPath)); err != nil {
+	if err := Run(runner, env, append(args, outputPath)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -448,7 +448,7 @@ func TestRunCommandRunsFunctionWithArguments(t *testing.T) {
 		},
 	}
 
-	if err := (bashRunner{}).Run(env, []string{"greet", "big world", outputPath}); err != nil {
+	if err := Run(bashRunner{}, env, []string{"greet", "big world", outputPath}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

@@ -102,7 +102,7 @@ func TestFishRunRejectsBashOnlyFunction(t *testing.T) {
 		},
 	}
 
-	err := (fishRunner{}).Run(env, []string{"deploy"})
+	err := Run(fishRunner{}, env, []string{"deploy"})
 	if err == nil || !strings.Contains(err.Error(), "functions") {
 		t.Fatalf("expected bash-only function error, got %v", err)
 	}

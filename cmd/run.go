@@ -27,7 +27,11 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
-		if err := runner.Run(env, args); err != nil {
+		if printPlan {
+			return shell.DescribeRun(cmd.OutOrStdout(), runner, env, args)
+		}
+
+		if err := shell.Run(runner, env, args); err != nil {
 			return fmt.Errorf("command failed: %w", err)
 		}
 
@@ -39,6 +43,7 @@ func init() {
 	// flags after the command belong to it, e.g. "aliasctl run kgp --help"
 	runCmd.Flags().SetInterspersed(false)
 	addShellFlag(runCmd)
+	addPrintFlag(runCmd)
 
 	rootCmd.AddCommand(runCmd)
 }

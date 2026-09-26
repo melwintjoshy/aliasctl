@@ -8,7 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var shellName string
+var (
+	shellName string
+	printPlan bool
+)
 
 var shellCmd = &cobra.Command{
 	Use:   "shell",
@@ -25,9 +28,13 @@ var shellCmd = &cobra.Command{
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
+		if printPlan {
+			return shell.DescribeStart(cmd.OutOrStdout(), runner, env)
+		}
+
 		warnToolProblems(cmd.ErrOrStderr(), env)
 
-		if err := runner.Start(env); err != nil {
+		if err := shell.Start(runner, env); err != nil {
 			return fmt.Errorf("shell error: %w", err)
 		}
 
@@ -44,8 +51,19 @@ func addShellFlag(command *cobra.Command) {
 	)
 }
 
+// prints what would run instead of running it, for debugging and bug reports
+func addPrintFlag(command *cobra.Command) {
+	command.Flags().BoolVar(
+		&printPlan,
+		"print",
+		false,
+		"Print the generated command and files instead of running them",
+	)
+}
+
 func init() {
 	addShellFlag(shellCmd)
+	addPrintFlag(shellCmd)
 
 	rootCmd.AddCommand(shellCmd)
 }
