@@ -10,23 +10,16 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 )
 
 // allowedFile lists trusted configs as "<sha256> <absolute path>", one per line.
 func allowedFile() (string, error) {
-	base := os.Getenv("XDG_CONFIG_HOME")
+	return xdgPath("XDG_CONFIG_HOME", []string{".config"}, "allowed")
+}
 
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("could not find home directory: %w", err)
-		}
-
-		base = filepath.Join(home, ".config")
-	}
-
-	return filepath.Join(base, "aliasctl", "allowed"), nil
+// AllowedFile is the allow list path; the hook watches its mtime to know when allow ran.
+func AllowedFile() (string, error) {
+	return allowedFile()
 }
 
 func hashConfig(path string) (string, string, error) {
@@ -55,28 +48,20 @@ func withAllowList(exclusive bool, fn func(allowed map[string]string) (bool, err
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(listPath), 0700); err != nil {
-		return fmt.Errorf("could not create allow list directory: %w", err)
-	}
-
-	// a separate lock file, since the list itself is replaced by rename on every write
-	lock, err := os.OpenFile(listPath+".lock", os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := openLock(listPath, exclusive)
 	if err != nil {
-		return fmt.Errorf("could not open allow list lock: %w", err)
+		return err
 	}
 
-	defer lock.Close()
+	if lock != nil {
+		defer lock.Close()
 
-	mode := syscall.LOCK_SH
-	if exclusive {
-		mode = syscall.LOCK_EX
+		if err := lockFile(lock, exclusive); err != nil {
+			return fmt.Errorf("could not lock allow list: %w", err)
+		}
+
+		defer unlockFile(lock)
 	}
-
-	if err := syscall.Flock(int(lock.Fd()), mode); err != nil {
-		return fmt.Errorf("could not lock allow list: %w", err)
-	}
-
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 
 	allowed, err := readAllowed(listPath)
 	if err != nil {
@@ -97,6 +82,36 @@ func withAllowList(exclusive bool, fn func(allowed map[string]string) (bool, err
 	}
 
 	return nil
+}
+
+// a separate lock file, since the list is replaced by rename on every write. readers never create
+// anything: the hook checks trust on every cd and an unwritable config home just means nothing is allowed
+func openLock(listPath string, exclusive bool) (*os.File, error) {
+	lockPath := listPath + ".lock"
+
+	if !exclusive {
+		lock, err := os.Open(lockPath)
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("could not open allow list lock: %w", err)
+		}
+
+		return lock, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(listPath), 0700); err != nil {
+		return nil, fmt.Errorf("could not create allow list directory: %w", err)
+	}
+
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("could not open allow list lock: %w", err)
+	}
+
+	return lock, nil
 }
 
 func readAllowed(listPath string) (map[string]string, error) {
@@ -172,20 +187,6 @@ func Allow(path string) (string, error) {
 	})
 
 	return absolute, err
-}
-
-func IsAllowed(path string) (bool, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return false, err
-	}
-
-	data, err := os.ReadFile(absolute)
-	if err != nil {
-		return false, err
-	}
-
-	return isAllowedContent(absolute, data)
 }
 
 func isAllowedContent(absolute string, data []byte) (bool, error) {

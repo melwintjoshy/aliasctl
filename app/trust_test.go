@@ -19,7 +19,7 @@ func TestAllowTracksContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, err := IsAllowed(path); err != nil || ok {
+	if ok, err := isAllowed(path); err != nil || ok {
 		t.Fatalf("expected unknown config to be refused, ok=%v err=%v", ok, err)
 	}
 
@@ -27,7 +27,7 @@ func TestAllowTracksContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, err := IsAllowed(path); err != nil || !ok {
+	if ok, err := isAllowed(path); err != nil || !ok {
 		t.Fatalf("expected allowed config, ok=%v err=%v", ok, err)
 	}
 
@@ -35,7 +35,7 @@ func TestAllowTracksContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, err := IsAllowed(path); err != nil || ok {
+	if ok, err := isAllowed(path); err != nil || ok {
 		t.Fatalf("expected changed config to be refused, ok=%v err=%v", ok, err)
 	}
 }
@@ -87,7 +87,7 @@ func TestAllowConcurrentWritersKeepEveryEntry(t *testing.T) {
 	}
 
 	for _, path := range paths {
-		if ok, err := IsAllowed(path); err != nil || !ok {
+		if ok, err := isAllowed(path); err != nil || !ok {
 			t.Fatalf("lost entry for %s (ok=%v err=%v)", path, ok, err)
 		}
 	}
@@ -110,7 +110,7 @@ func TestAllowIgnoresLeftoverTempFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, err := IsAllowed(path); err != nil || !ok {
+	if ok, err := isAllowed(path); err != nil || !ok {
 		t.Fatalf("expected entry to survive, ok=%v err=%v", ok, err)
 	}
 }
@@ -220,5 +220,51 @@ func TestLoadTrustedEnvironment(t *testing.T) {
 
 	if _, err := LoadTrustedEnvironment(path); !errors.Is(err, ErrNotAllowed) {
 		t.Fatalf("expected an edited config to be refused, got %v", err)
+	}
+}
+
+// reads the file the way the hook does, then asks whether those bytes are allowed
+func isAllowed(path string) (bool, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return false, err
+	}
+
+	data, err := os.ReadFile(absolute)
+	if err != nil {
+		return false, err
+	}
+
+	return isAllowedContent(absolute, data)
+}
+
+func TestTrustCheckNeverWritesToConfigHome(t *testing.T) {
+	// the hook checks trust on every cd, so a config home nobody can write to must mean "not allowed", not an error
+	home := filepath.Join(t.TempDir(), "readonly")
+
+	if err := os.Mkdir(home, 0500); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(home, 0700) })
+
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	path := filepath.Join(t.TempDir(), "aliasctl.yaml")
+
+	if err := os.WriteFile(path, []byte("name: demo\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := isAllowed(path); err != nil || ok {
+		t.Fatalf("expected not allowed without an error, got %v, %v", ok, err)
+	}
+
+	if _, err := LoadTrustedEnvironment(path); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("expected ErrNotAllowed, got %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(home, "aliasctl")); !os.IsNotExist(err) {
+		t.Fatal("a read-only trust check created the allow list directory")
 	}
 }
