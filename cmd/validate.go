@@ -15,7 +15,7 @@ var validateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		// resolving too, so undefined ${VAR} fails here instead of at shell or run time
-		if _, err := app.LoadEnvironment(configPath); err != nil {
+		if _, _, err := app.LoadEnvironment(configPath); err != nil {
 			return fmt.Errorf("configuration error: %w", err)
 		}
 

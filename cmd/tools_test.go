@@ -108,7 +108,7 @@ func TestWarnToolProblems(t *testing.T) {
 		"fakeslow": `/bin/sleep 5; echo 1.0`,
 	})
 
-	env, err := app.LoadEnvironment(writeTestConfig(t, toolsConfig))
+	env, _, err := app.LoadEnvironment(writeTestConfig(t, toolsConfig))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ aliasctl: run "aliasctl tools check" for details
 func TestWarnToolProblemsQuietWhenAllOK(t *testing.T) {
 	fakeToolsOnPath(t, map[string]string{"fakego": `echo "go1.22.4"`})
 
-	env, err := app.LoadEnvironment(writeTestConfig(t, "name: t\naliases:\n  k: kubectl\ntools:\n  fakego: \"1.22\"\n"))
+	env, _, err := app.LoadEnvironment(writeTestConfig(t, "name: t\naliases:\n  k: kubectl\ntools:\n  fakego: \"1.22\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

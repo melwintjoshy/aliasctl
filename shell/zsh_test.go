@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -62,7 +63,7 @@ func startZshForTest(t *testing.T, env *resolver.Environment, userDir, script st
 
 	dir := t.TempDir()
 
-	zshenv, zshrc, err := renderZshStartup(env, dir, userDir)
+	zshenv, zshrc, err := renderZshStartup(env, "", dir, userDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,5 +157,24 @@ func TestZshPromptHookReappliesPrefix(t *testing.T) {
 
 	if got != "(aliasctl:demo) dyn> \n" {
 		t.Fatalf("unexpected prompt %q", got)
+	}
+}
+
+func TestRenderZshStartupIncludesBanner(t *testing.T) {
+	env := &resolver.Environment{
+		Name: "dev",
+	}
+
+	_, zshrc, err := renderZshStartup(env, "/path/to/aliasctl.yaml", "/tmp/zsh", "/home/user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(zshrc, "Environment: dev") {
+		t.Fatal("expected environment name in rendered zshrc banner")
+	}
+
+	if !strings.Contains(zshrc, "Config:      /path/to/aliasctl.yaml") {
+		t.Fatal("expected config path in rendered zshrc banner")
 	}
 }
