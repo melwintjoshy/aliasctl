@@ -5,6 +5,8 @@ type Environment struct {
 	Variables map[string]string
 	Aliases   map[string]Command
 	Functions map[string]string
+
+	FunctionsFish map[string]string
 }
 
 func (e *Environment) Variable(name string) (string, bool) {

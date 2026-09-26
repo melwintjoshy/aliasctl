@@ -17,16 +17,17 @@ var runCmd = &cobra.Command{
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 
+		runner, err := shell.New(shellName)
+		if err != nil {
+			return err
+		}
+
 		env, err := app.LoadEnvironment(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
-		if len(args) == 0 {
-			return fmt.Errorf("no command specified")
-		}
-
-		if err := shell.RunCommand(env, args); err != nil {
+		if err := runner.Run(env, args); err != nil {
 			return fmt.Errorf("command failed: %w", err)
 		}
 
@@ -35,5 +36,9 @@ var runCmd = &cobra.Command{
 }
 
 func init() {
+	// flags after the command belong to it, e.g. "aliasctl run kgp --help"
+	runCmd.Flags().SetInterspersed(false)
+	addShellFlag(runCmd)
+
 	rootCmd.AddCommand(runCmd)
 }

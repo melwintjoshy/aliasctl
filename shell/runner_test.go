@@ -3,6 +3,8 @@ package shell
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/melwintjoshy/aliasctl/resolver"
@@ -33,7 +35,7 @@ func TestRunCommandPassesVariables(t *testing.T) {
 		"echo $ALIASCTL_TEST > " + outputFile.Name(),
 	}
 
-	if err := RunCommand(env, args); err != nil {
+	if err := (bashRunner{}).Run(env, args); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -96,7 +98,7 @@ func TestRunCommandMissingCommand(t *testing.T) {
 		Name: "test",
 	}
 
-	err := RunCommand(
+	err := (bashRunner{}).Run(
 		env,
 		[]string{"this-command-definitely-does-not-exist"},
 	)
@@ -153,5 +155,328 @@ func TestRunShellExecutesFunctions(t *testing.T) {
 	expected := "hello from function\n"
 	if string(output) != expected {
 		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+}
+
+func TestRunBashRefusesNestedEnvironment(t *testing.T) {
+	t.Setenv("ALIASCTL_ENV", "outer")
+
+	err := (bashRunner{}).Start(&resolver.Environment{Name: "inner"})
+	if err == nil {
+		t.Fatal("expected nested environment error")
+	}
+
+	expected := `already inside aliasctl environment "outer"; exit it first`
+
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func runInteractive(t *testing.T, home string, env *resolver.Environment, script string) string {
+	t.Helper()
+
+	rc, err := renderInteractiveRC(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rcPath := filepath.Join(t.TempDir(), "rc")
+
+	if err := os.WriteFile(rcPath, []byte(rc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "--noprofile", "--rcfile", rcPath, "-i", "-c", script)
+
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "HOME="+home, "PROMPT_COMMAND=")
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("interactive shell failed: %v", err)
+	}
+
+	return string(output)
+}
+
+func writeHomeFile(t *testing.T, home, name, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(home, name), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInteractiveRCReappliesPrefixAfterPromptCommand(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	// mimics starship-style prompts that rebuild PS1 before every prompt
+	writeHomeFile(t, home, ".bashrc", `PROMPT_COMMAND='PS1="dyn> "'`+"\n")
+
+	got := runInteractive(
+		t,
+		home,
+		&resolver.Environment{Name: "demo"},
+		`eval "$PROMPT_COMMAND"; echo "$PS1"; eval "$PROMPT_COMMAND"; echo "$PS1"`,
+	)
+
+	expected := "(aliasctl:${ALIASCTL_ENV}) dyn> \n" +
+		"(aliasctl:${ALIASCTL_ENV}) dyn> \n"
+
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestInteractiveRCFallsBackToBashProfile(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	writeHomeFile(t, home, ".bash_profile", "alias fromprofile='echo profile'\n")
+
+	got := runInteractive(t, home, &resolver.Environment{Name: "demo"}, "fromprofile")
+
+	if got != "profile\n" {
+		t.Fatalf("expected %q, got %q", "profile\n", got)
+	}
+}
+
+func TestInteractiveRCLayersOnUserRC(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	userRC := "PS1='base> '\n" +
+		"alias mine='echo mine'\n" +
+		"alias shared='echo user'\n"
+
+	if err := os.WriteFile(filepath.Join(home, ".bashrc"), []byte(userRC), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	env := &resolver.Environment{
+		Name: "demo $(touch pwned)",
+		Aliases: map[string]resolver.Command{
+			"shared": {Name: "echo", Args: []string{"project"}},
+		},
+	}
+
+	rc, err := renderInteractiveRC(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rcPath := filepath.Join(t.TempDir(), "rc")
+
+	if err := os.WriteFile(rcPath, []byte(rc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"--noprofile",
+		"--rcfile", rcPath,
+		"-i",
+		"-c", `echo "$PS1"; mine; shared; echo "$ALIASCTL_ENV"`,
+	)
+
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "HOME="+home)
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("interactive shell failed: %v", err)
+	}
+
+	// the prompt holds a reference to the name, never the name itself
+	expected := "(aliasctl:${ALIASCTL_ENV}) base> \n" +
+		"mine\n" +
+		"project\n" +
+		"demo $(touch pwned)\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+
+	if _, err := os.Stat(filepath.Join(home, "pwned")); err == nil {
+		t.Fatal("environment name was executed")
+	}
+}
+
+func runToFile(t *testing.T, env *resolver.Environment, args ...string) string {
+	t.Helper()
+
+	return runToFileWith(t, bashRunner{}, "bash", env, args...)
+}
+
+// runs through the real shell binary and returns what the command wrote to the path passed last
+func runToFileWith(t *testing.T, runner Runner, binary string, env *resolver.Environment, args ...string) string {
+	t.Helper()
+
+	if _, err := exec.LookPath(binary); err != nil {
+		t.Skipf("%s is not available", binary)
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "out")
+
+	if err := runner.Run(env, append(args, outputPath)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(data)
+}
+
+// write prints every arg but the last into the file named by the last
+func TestRunCommandRunsAliasWithExtraArguments(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"greet": {Name: "write", Args: []string{"hello world"}},
+		},
+		Functions: map[string]string{
+			"write": `printf '[%s]' "${@:1:$#-1}" > "${@: -1}"`,
+		},
+	}
+
+	got := runToFile(t, env, "greet", "--loud")
+
+	if got != "[hello world][--loud]" {
+		t.Fatalf("unexpected output %q", got)
+	}
+}
+
+func TestRunCommandRunsChainedAlias(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"base":  {Name: "write", Args: []string{"base"}},
+			"chain": {Name: "base", Args: []string{"-w"}},
+		},
+		Functions: map[string]string{
+			"write": `printf '[%s]' "${@:1:$#-1}" > "${@: -1}"`,
+		},
+	}
+
+	got := runToFile(t, env, "chain")
+
+	if got != "[base][-w]" {
+		t.Fatalf("unexpected output %q", got)
+	}
+}
+
+func TestRunCommandSetsActiveEnvironment(t *testing.T) {
+	env := &resolver.Environment{
+		Name: "demo",
+		Functions: map[string]string{
+			"which_env": `echo "$ALIASCTL_ENV" > "$1"`,
+		},
+	}
+
+	got := runToFile(t, env, "which_env")
+
+	if got != "demo\n" {
+		t.Fatalf("expected %q, got %q", "demo\n", got)
+	}
+}
+
+func TestLookupCommand(t *testing.T) {
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"greet": {Name: "echo"},
+		},
+		Functions: map[string]string{
+			"deploy": "echo bash",
+		},
+		FunctionsFish: map[string]string{
+			"fishy": "echo fish",
+		},
+	}
+
+	tests := []struct {
+		name    string
+		fish    bool
+		found   bool
+		wantErr bool
+	}{
+		{name: "greet", found: true},
+		{name: "greet", fish: true, found: true},
+		{name: "deploy", found: true},
+		{name: "deploy", fish: true, wantErr: true},
+		{name: "fishy", wantErr: true},
+		{name: "fishy", fish: true, found: true},
+		{name: "ls"},
+	}
+
+	for _, tt := range tests {
+		found, err := lookupCommand(env, tt.name, tt.fish)
+
+		if (err != nil) != tt.wantErr || found != tt.found {
+			t.Fatalf("%s (fish=%v): found=%v err=%v", tt.name, tt.fish, found, err)
+		}
+	}
+}
+
+func TestRunCommandRunsFunctionWithArguments(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "out")
+
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"GREETING": "hello",
+		},
+		Aliases: map[string]resolver.Command{
+			"say": {Name: "echo"},
+		},
+		Functions: map[string]string{
+			"greet": `say "$GREETING $1" > "$2"`,
+		},
+	}
+
+	if err := (bashRunner{}).Run(env, []string{"greet", "big world", outputPath}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "hello big world\n" {
+		t.Fatalf("expected %q, got %q", "hello big world\n", string(data))
+	}
+}
+
+func TestStartAllowedFromHookLoadedEnvironment(t *testing.T) {
+	t.Setenv("ALIASCTL_ENV", "auto")
+	t.Setenv("ALIASCTL_HOOK", "1")
+
+	if err := checkNotNested(); err != nil {
+		t.Fatalf("expected hook-loaded environment to allow a shell, got %v", err)
+	}
+}
+
+func TestChildEnvironmentDropsHookMarker(t *testing.T) {
+	t.Setenv("ALIASCTL_HOOK", "1")
+
+	for _, entry := range buildEnvironment(&resolver.Environment{Name: "demo"}) {
+		if strings.HasPrefix(entry, "ALIASCTL_HOOK=") {
+			t.Fatal("ALIASCTL_HOOK leaked into the child environment")
+		}
 	}
 }

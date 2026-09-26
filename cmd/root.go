@@ -1,6 +1,13 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"errors"
+
+	"github.com/spf13/cobra"
+)
+
+// ErrReported means the command already told the user what went wrong.
+var ErrReported = errors.New("already reported")
 
 var configPath string
 

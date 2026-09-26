@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 )
 
 func (c *Config) Validate() error {
@@ -10,22 +12,36 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("name is required")
 	}
 
-	if len(c.Aliases) == 0 {
-		return fmt.Errorf("at least one alias is required")
+	if len(c.Aliases) == 0 && len(c.Functions) == 0 && len(c.FunctionsFish) == 0 {
+		return fmt.Errorf("at least one alias or function is required")
 	}
 
-	for name := range c.Aliases {
+	for _, name := range slices.Sorted(maps.Keys(c.Aliases)) {
 		if !isValidAliasName(name) {
 			return fmt.Errorf("invalid alias name: %q", name)
 		}
 	}
-	for name := range c.Functions {
+	for _, name := range slices.Sorted(maps.Keys(c.Functions)) {
 		if !isValidIdentifier(name) {
 			return fmt.Errorf("invalid function name: %q", name)
 		}
+
+		if _, ok := c.Aliases[name]; ok {
+			return fmt.Errorf("%q is defined as both an alias and a function", name)
+		}
 	}
 
-	for name := range c.Variables {
+	for _, name := range slices.Sorted(maps.Keys(c.FunctionsFish)) {
+		if !isValidIdentifier(name) {
+			return fmt.Errorf("invalid fish function name: %q", name)
+		}
+
+		if _, ok := c.Aliases[name]; ok {
+			return fmt.Errorf("%q is defined as both an alias and a fish function", name)
+		}
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(c.Variables)) {
 		if !isValidIdentifier(name) {
 			return fmt.Errorf("invalid variable name: %q", name)
 		}
@@ -34,12 +50,15 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+var (
+	identifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	aliasNamePattern  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+)
+
 func isValidIdentifier(name string) bool {
-	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_]*$`, name)
-	return matched
+	return identifierPattern.MatchString(name)
 }
 
 func isValidAliasName(name string) bool {
-	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_-]*$`, name)
-	return matched
+	return aliasNamePattern.MatchString(name)
 }

@@ -97,7 +97,9 @@ func TestBashRendererQuotesAliasCommand(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := `alias danger='echo hello'\''; echo MALICIOUS; echo '\''`
+	expected := "alias danger=" + shellQuote(
+		"echo "+shellQuote(`hello'; echo MALICIOUS; echo '`),
+	)
 
 	if !strings.Contains(output, expected) {
 		t.Fatalf(
@@ -184,20 +186,65 @@ func TestBashRendererDoesNotExecuteAliasArgument(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// defining the alias is not enough, the injection only fires when it expands
 	cmd := exec.Command(
 		"bash",
 		"-c",
-		script,
+		"shopt -s expand_aliases\n"+script+"danger\n",
 	)
 
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.Output()
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := "hello; touch " + markerPath + "\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
 	}
 
 	if _, err := os.Stat(markerPath); err == nil {
 		t.Fatal("alias argument was interpreted as shell code")
 	} else if !os.IsNotExist(err) {
 		t.Fatalf("unexpected error checking marker: %v", err)
+	}
+}
+
+func TestBashRendererAliasKeepsArgumentBoundaries(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"show": {
+				Name: "printf",
+				Args: []string{`[%s]\n`, "-m", "initial commit"},
+			},
+		},
+	}
+
+	script, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		"shopt -s expand_aliases\n"+script+"show\n",
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("alias execution failed: %v", err)
+	}
+
+	expected := "[-m]\n[initial commit]\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
 	}
 }
 
@@ -217,7 +264,8 @@ go build ./...
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := `deploy() {
+	expected := `unalias deploy 2>/dev/null
+deploy() {
 echo "Building..."
 go build ./...
 }
@@ -258,6 +306,116 @@ func TestBashRendererFunctionExecutes(t *testing.T) {
 	}
 
 	expected := "hello from function\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+}
+
+func TestBashRendererOutputIsStable(t *testing.T) {
+	env := &resolver.Environment{
+		Variables: map[string]string{
+			"B": "2",
+			"A": "1",
+			"C": "3",
+		},
+
+		Aliases: map[string]resolver.Command{
+			"z": {Name: "echo"},
+			"a": {Name: "ls"},
+		},
+
+		Functions: map[string]string{
+			"second": "echo 2",
+			"first":  "echo 1",
+		},
+	}
+
+	expected := "export A='1'\n" +
+		"export B='2'\n" +
+		"export C='3'\n" +
+		"alias a='ls'\n" +
+		"alias z='echo'\n" +
+		"unalias first 2>/dev/null\nfirst() {\necho 1\n}\n" +
+		"unalias second 2>/dev/null\nsecond() {\necho 2\n}\n"
+
+	for range 20 {
+		output, err := (BashRenderer{}).Render(env)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if output != expected {
+			t.Fatalf("expected:\n%s\ngot:\n%s", expected, output)
+		}
+	}
+}
+
+func TestBashRendererChainsAliases(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	env := &resolver.Environment{
+		Aliases: map[string]resolver.Command{
+			"base":  {Name: "printf", Args: []string{`[%s]\n`, "base"}},
+			"chain": {Name: "base", Args: []string{"-w"}},
+		},
+	}
+
+	script, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		"shopt -s expand_aliases\n"+script+"chain\n",
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("chained alias failed: %v", err)
+	}
+
+	expected := "[base]\n[-w]\n"
+
+	if string(output) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(output))
+	}
+}
+
+func TestBashRendererFunctionOverridesUserAlias(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	env := &resolver.Environment{
+		Functions: map[string]string{
+			"deploy": `echo "project deploy"`,
+			"later":  `echo "later"`,
+		},
+	}
+
+	script, err := (BashRenderer{}).Render(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// simulates a user rc that already defines an alias with the function's name
+	cmd := exec.Command(
+		"bash",
+		"-c",
+		"shopt -s expand_aliases\nalias deploy='echo user deploy'\n"+script+"deploy\nlater\n",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rc failed: %v\n%s", err, output)
+	}
+
+	expected := "project deploy\nlater\n"
 
 	if string(output) != expected {
 		t.Fatalf("expected %q, got %q", expected, string(output))
