@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // allowedFile lists trusted configs as "<sha256> <absolute path>", one per line.
@@ -44,15 +45,61 @@ func hashConfig(path string) (string, string, error) {
 	return absolute, hex.EncodeToString(sum[:]), nil
 }
 
-func readAllowed() (map[string]string, error) {
-	path, err := allowedFile()
+// withAllowList runs fn on the list under a lock and saves it when fn reports a change.
+func withAllowList(exclusive bool, fn func(allowed map[string]string) (bool, error)) error {
+	listPath, err := allowedFile()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
+	if err := os.MkdirAll(filepath.Dir(listPath), 0700); err != nil {
+		return fmt.Errorf("could not create allow list directory: %w", err)
+	}
+
+	// a separate lock file, since the list itself is replaced by rename on every write
+	lock, err := os.OpenFile(listPath+".lock", os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return fmt.Errorf("could not open allow list lock: %w", err)
+	}
+
+	defer lock.Close()
+
+	mode := syscall.LOCK_SH
+	if exclusive {
+		mode = syscall.LOCK_EX
+	}
+
+	if err := syscall.Flock(int(lock.Fd()), mode); err != nil {
+		return fmt.Errorf("could not lock allow list: %w", err)
+	}
+
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	allowed, err := readAllowed(listPath)
+	if err != nil {
+		return fmt.Errorf("could not read allow list: %w", err)
+	}
+
+	changed, err := fn(allowed)
+	if err != nil || !changed {
+		return err
+	}
+
+	if !exclusive {
+		return fmt.Errorf("allow list changed under a shared lock")
+	}
+
+	if err := writeAllowed(listPath, allowed); err != nil {
+		return fmt.Errorf("could not write allow list: %w", err)
+	}
+
+	return nil
+}
+
+func readAllowed(listPath string) (map[string]string, error) {
 	allowed := make(map[string]string)
 
-	file, err := os.Open(path)
+	file, err := os.Open(listPath)
 	if os.IsNotExist(err) {
 		return allowed, nil
 	}
@@ -75,6 +122,40 @@ func readAllowed() (map[string]string, error) {
 	return allowed, scanner.Err()
 }
 
+// temp file plus rename, so a crash mid-write leaves the old list intact
+func writeAllowed(listPath string, allowed map[string]string) error {
+	var content strings.Builder
+
+	for _, configPath := range slices.Sorted(maps.Keys(allowed)) {
+		fmt.Fprintf(&content, "%s %s\n", allowed[configPath], configPath)
+	}
+
+	temp, err := os.CreateTemp(filepath.Dir(listPath), ".allowed-*")
+	if err != nil {
+		return err
+	}
+
+	tempPath := temp.Name()
+
+	defer os.Remove(tempPath)
+
+	if _, err := temp.WriteString(content.String()); err != nil {
+		temp.Close()
+		return err
+	}
+
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+
+	if err := temp.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tempPath, listPath)
+}
+
 // Allow trusts the config's current content; any later edit needs a new allow.
 func Allow(path string) (string, error) {
 	absolute, hash, err := hashConfig(path)
@@ -82,33 +163,12 @@ func Allow(path string) (string, error) {
 		return "", fmt.Errorf("could not read configuration: %w", err)
 	}
 
-	allowed, err := readAllowed()
-	if err != nil {
-		return "", fmt.Errorf("could not read allow list: %w", err)
-	}
+	err = withAllowList(true, func(allowed map[string]string) (bool, error) {
+		allowed[absolute] = hash
+		return true, nil
+	})
 
-	allowed[absolute] = hash
-
-	listPath, err := allowedFile()
-	if err != nil {
-		return "", err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(listPath), 0700); err != nil {
-		return "", fmt.Errorf("could not create allow list: %w", err)
-	}
-
-	var content strings.Builder
-
-	for _, configPath := range slices.Sorted(maps.Keys(allowed)) {
-		fmt.Fprintf(&content, "%s %s\n", allowed[configPath], configPath)
-	}
-
-	if err := os.WriteFile(listPath, []byte(content.String()), 0600); err != nil {
-		return "", fmt.Errorf("could not write allow list: %w", err)
-	}
-
-	return absolute, nil
+	return absolute, err
 }
 
 func IsAllowed(path string) (bool, error) {
@@ -117,10 +177,12 @@ func IsAllowed(path string) (bool, error) {
 		return false, err
 	}
 
-	allowed, err := readAllowed()
-	if err != nil {
-		return false, err
-	}
+	var ok bool
 
-	return allowed[absolute] == hash, nil
+	err = withAllowList(false, func(allowed map[string]string) (bool, error) {
+		ok = allowed[absolute] == hash
+		return false, nil
+	})
+
+	return ok, err
 }
