@@ -176,8 +176,8 @@ eval "$(aliasctl hook zsh)"    # in ~/.zshrc
 
 - A configuration is only loaded after you trust it with `aliasctl allow`, which records its path and a hash of its content. An unknown or edited file is refused with a one-line hint, so cloning a repository never runs its configuration on the next prompt.
 - `aliasctl allow --list` shows every trusted configuration as `ok`, `changed` (edited since it was allowed) or `missing` (file deleted). `aliasctl allow --prune` forgets the missing ones, and `aliasctl deny` stops trusting one; it unloads on the next directory change.
-- On leaving, project aliases, functions and variables are removed, and anything they shadowed (your own aliases, functions, previous variable values and `PATH`) is restored. The `(aliasctl:<name>)` prompt prefix is removed too.
-- **Editing a loaded configuration:** the hook notices on the next prompt. The previous trusted version stays loaded and you get a one-line hint; after `aliasctl allow`, the next prompt loads the new version.
+- On leaving, project aliases, functions and variables are removed, and anything they shadowed (your own aliases, functions and previous variable values) is restored. Tool directories are taken off `PATH` again, while anything you added to `PATH` meanwhile (a virtualenv, `nvm use`) stays. The `(aliasctl:<name>)` prompt prefix is removed too.
+- **Editing a loaded configuration:** the hook notices on the next prompt. The previous trusted version stays loaded and you get a one-line hint; after `aliasctl allow`, the next prompt loads the new version. Until then nothing runs per prompt: the hook only tries again after the file or the allow list changes.
 - `aliasctl shell` still works inside an auto-activated directory.
 - Only Bash and Zsh are supported for auto-activation.
 

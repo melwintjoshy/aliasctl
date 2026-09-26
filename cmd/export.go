@@ -13,7 +13,10 @@ import (
 	"github.com/melwintjoshy/aliasctl/shell"
 )
 
-var exportQuiet bool
+var (
+	exportQuiet    bool
+	exportShellPID int
+)
 
 var exportCmd = &cobra.Command{
 	Use:   "export",
@@ -32,7 +35,7 @@ var exportCmd = &cobra.Command{
 		}
 
 		// stamped before reading, so an edit made while loading still counts as newer
-		stamp, err := app.NewStamp()
+		stamp, err := app.NewStamp(exportShellPID)
 		if err != nil {
 			return err
 		}
@@ -41,7 +44,7 @@ var exportCmd = &cobra.Command{
 
 		// without this, cloning a repo would run its config on the next prompt
 		if errors.Is(err, app.ErrNotAllowed) {
-			os.Remove(stamp)
+			app.RemoveStamp(stamp)
 
 			if !exportQuiet {
 				fmt.Fprintf(
@@ -55,15 +58,21 @@ var exportCmd = &cobra.Command{
 		}
 
 		if err != nil {
-			os.Remove(stamp)
+			app.RemoveStamp(stamp)
 			return fmt.Errorf("failed to load environment: %w", err)
 		}
 
 		activateTools(os.Stderr, env)
 
-		script, err := shell.RenderExport(env, shellName, absolutePath, stamp)
+		allowedPath, err := app.AllowedFile()
 		if err != nil {
-			os.Remove(stamp)
+			app.RemoveStamp(stamp)
+			return err
+		}
+
+		script, err := shell.RenderExport(env, shellName, absolutePath, stamp, allowedPath)
+		if err != nil {
+			app.RemoveStamp(stamp)
 			return err
 		}
 
@@ -81,6 +90,14 @@ func init() {
 		"quiet",
 		false,
 		"Do not print the hint for an untrusted configuration",
+	)
+
+	// the hook passes $$ so stale stamps can be told apart from those of shells still running
+	exportCmd.Flags().IntVar(
+		&exportShellPID,
+		"shell-pid",
+		0,
+		"Process id of the shell that will eval the output",
 	)
 
 	rootCmd.AddCommand(exportCmd)

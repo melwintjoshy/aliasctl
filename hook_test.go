@@ -147,26 +147,37 @@ func runHookScenario(t *testing.T, shellName string) {
 	}
 }
 
+// the binary is swapped for a wrapper that logs every call, to show the hook forks only when something changed.
 // sleep 1 because bash 3.2 compares mtimes in whole seconds
 const hookEditScript = `
-"$ALIASCTL_BIN" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
+mv "$ALIASCTL_BIN" "$ALIASCTL_BIN.real"
+printf '#!/bin/sh\necho "$*" >> "$HOME/calls"\nexec "%s.real" "$@"\n' "$ALIASCTL_BIN" > "$ALIASCTL_BIN"
+chmod +x "$ALIASCTL_BIN"
+"$ALIASCTL_BIN.real" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
 cd "$PROJECT"; __aliasctl_hook
 eval hi
 sleep 1
 printf 'name: demo\naliases:\n  hi: "echo edited-hi"\n' > "$PROJECT/aliasctl.yaml"
 __aliasctl_hook; eval hi
 __aliasctl_hook; eval hi
-"$ALIASCTL_BIN" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
 __aliasctl_hook; eval hi
+echo "exports=$(grep -c ' export ' "$HOME/calls")"
+"$ALIASCTL_BIN.real" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
+__aliasctl_hook; eval hi
+echo "exports=$(grep -c ' export ' "$HOME/calls")"
 echo "prompt=$PROMPT_VALUE"
 cd "$HOME"; __aliasctl_hook; eval hi
 echo "stamps=$(ls "$HOME/.local/state/aliasctl/stamps" | wc -l | tr -d ' ')"
 `
 
+// two exports before allow: the load and one failed retry; the other prompts fork nothing
 const hookEditExpected = `project-hi
 project-hi
 project-hi
+project-hi
+exports=2
 edited-hi
+exports=3
 prompt=(aliasctl:demo) base> 
 user-hi
 stamps=0
