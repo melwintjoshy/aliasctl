@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,15 +15,26 @@ import (
 func runRoot(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 
+	return runRootWithInput(t, strings.NewReader(""), args...)
+}
+
+// stderr is captured too, so what a command prints on either stream is in the result
+func runRootWithInput(t *testing.T, input io.Reader, args ...string) (string, error) {
+	t.Helper()
+
 	var output bytes.Buffer
 
 	resetFlags(rootCmd)
 
+	rootCmd.SetIn(input)
 	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&output)
 	rootCmd.SetArgs(args)
 
 	t.Cleanup(func() {
+		rootCmd.SetIn(nil)
 		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
 		rootCmd.SetArgs(nil)
 		configPath = ""
 	})

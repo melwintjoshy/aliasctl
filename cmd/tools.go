@@ -42,40 +42,7 @@ var toolsCheckCmd = &cobra.Command{
 			return nil
 		}
 
-		results := checkTools(env)
-
-		table := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
-
-		fmt.Fprintln(table, "TOOL\tWANT\tFOUND\tSTATUS\tPATH\tNOTE")
-
-		failed := false
-
-		for _, result := range results {
-			found := "-"
-			if result.Found != nil {
-				found = result.Found.String()
-			}
-
-			path := result.Path
-			if path == "" {
-				path = "-"
-			}
-
-			fmt.Fprintf(
-				table,
-				"%s\t%s\t%s\t%s\t%s\t%s\n",
-				result.Name,
-				result.Rule,
-				found,
-				result.Status,
-				path,
-				result.Detail,
-			)
-
-			failed = failed || result.Status != tools.StatusOK
-		}
-
-		table.Flush()
+		failed := printToolTable(output, checkTools(env))
 
 		// non-zero so it works as a ci gate; the table already says why
 		if failed {
@@ -84,6 +51,44 @@ var toolsCheckCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// printToolTable reports whether any tool is not ok.
+func printToolTable(w io.Writer, results []tools.Result) bool {
+	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintln(table, "TOOL\tWANT\tFOUND\tSTATUS\tPATH\tNOTE")
+
+	failed := false
+
+	for _, result := range results {
+		found := "-"
+		if result.Found != nil {
+			found = result.Found.String()
+		}
+
+		path := result.Path
+		if path == "" {
+			path = "-"
+		}
+
+		fmt.Fprintf(
+			table,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			result.Name,
+			result.Rule,
+			found,
+			result.Status,
+			path,
+			result.Detail,
+		)
+
+		failed = failed || result.Status != tools.StatusOK
+	}
+
+	table.Flush()
+
+	return failed
 }
 
 func checkTools(env *resolver.Environment) []tools.Result {
@@ -118,6 +123,7 @@ func warnToolProblems(w io.Writer, env *resolver.Environment) {
 
 func init() {
 	toolsCmd.AddCommand(toolsCheckCmd)
+	toolsCmd.AddCommand(toolsInstallCmd)
 	rootCmd.AddCommand(toolsCmd)
 }
 
