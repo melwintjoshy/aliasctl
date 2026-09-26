@@ -34,7 +34,7 @@ aliases:
 tools:
   fakego: "1.22"
   fakekube: "<1.30"
-  fakejava: "*"
+  fakejava: { version: "*", timeout: 30s }
   fakemissing: ">=1.6"
   fakeslow: { version: "*", check: "fakeslow --version", timeout: 300ms }
 `
