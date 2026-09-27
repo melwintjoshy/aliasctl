@@ -199,6 +199,42 @@ func runHookEditScenario(t *testing.T, shellName string) {
 	}
 }
 
+// a venv activated inside the project prepends its tag, which used to double the prefix and leave it after cd out
+const hookVenvScript = `
+"$ALIASCTL_BIN" --config "$PROJECT/aliasctl.yaml" allow >/dev/null
+cd "$PROJECT"; __aliasctl_hook
+PROMPT_NAME="(venv) $PROMPT_VALUE"
+__aliasctl_hook; __aliasctl_hook
+echo "prompt=$PROMPT_VALUE"
+cd "$HOME"; __aliasctl_hook
+echo "prompt=$PROMPT_VALUE"
+`
+
+const hookVenvExpected = `prompt=(venv) (aliasctl:demo) base> 
+prompt=(venv) base> 
+`
+
+func runHookVenvScenario(t *testing.T, shellName string) {
+	t.Helper()
+
+	promptVariable := map[string]string{"bash": "PS1", "zsh": "PROMPT"}[shellName]
+	script := strings.ReplaceAll(hookVenvScript, "PROMPT_NAME", promptVariable)
+
+	output, stderr, _ := runHookShell(t, shellName, hookProjectConfig, script)
+
+	if output != hookVenvExpected {
+		t.Fatalf("expected:\n%s\ngot:\n%s\nstderr:\n%s", hookVenvExpected, output, stderr)
+	}
+}
+
+func TestHookVenvBash(t *testing.T) {
+	runHookVenvScenario(t, "bash")
+}
+
+func TestHookVenvZsh(t *testing.T) {
+	runHookVenvScenario(t, "zsh")
+}
+
 func TestHookBash(t *testing.T) {
 	runHookScenario(t, "bash")
 }

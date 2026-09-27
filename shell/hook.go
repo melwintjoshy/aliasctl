@@ -165,7 +165,7 @@ const hookFunction = `__aliasctl_hook() {
   if [ "$__aliasctl_found" != "${ALIASCTL_CONFIG:-}" ]; then
     if [ -n "${ALIASCTL_CONFIG:-}" ]; then
       eval "$ALIASCTL_UNLOAD"
-      __PROMPT__="${__PROMPT__#"$__aliasctl_prefix"}"
+      __PROMPT__="${__PROMPT__/"$__aliasctl_prefix"/}"
     fi
 
     unset ALIASCTL_ENV ALIASCTL_HOOK ALIASCTL_CONFIG ALIASCTL_UNLOAD __aliasctl_prefix __aliasctl_stamp __aliasctl_allowed __aliasctl_edit_hinted
@@ -189,7 +189,7 @@ const hookFunction = `__aliasctl_hook() {
     local __aliasctl_reload
     if __aliasctl_reload="$(__BINARY__ --config "$ALIASCTL_CONFIG" export --shell __SHELL__ --shell-pid $$ --quiet)"; then
       eval "$ALIASCTL_UNLOAD"
-      __PROMPT__="${__PROMPT__#"$__aliasctl_prefix"}"
+      __PROMPT__="${__PROMPT__/"$__aliasctl_prefix"/}"
       eval "$__aliasctl_reload"
       unset __aliasctl_edit_hinted
     else
@@ -202,9 +202,10 @@ const hookFunction = `__aliasctl_hook() {
     fi
   fi
 
+  # anywhere, not just the front, since a venv activated here prepends its own tag
   if [ -n "${ALIASCTL_CONFIG:-}" ]; then
     case "$__PROMPT__" in
-      "$__aliasctl_prefix"*) ;;
+      *"$__aliasctl_prefix"*) ;;
       *) __PROMPT__="$__aliasctl_prefix$__PROMPT__" ;;
     esac
   fi

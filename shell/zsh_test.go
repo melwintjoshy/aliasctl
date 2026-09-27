@@ -160,6 +160,24 @@ func TestZshPromptHookReappliesPrefix(t *testing.T) {
 	}
 }
 
+func TestZshPromptHookKeepsSinglePrefixAfterVenv(t *testing.T) {
+	home := t.TempDir()
+
+	writeHomeFile(t, home, ".zshrc", "PROMPT='base> '\n")
+
+	// venv activate prepends its tag the same way
+	got := startZshForTest(
+		t,
+		&resolver.Environment{Name: "demo"},
+		home,
+		`PROMPT="(venv) $PROMPT"; for f in $precmd_functions; do $f; done; print -r -- "$PROMPT"`,
+	)
+
+	if got != "(venv) (aliasctl:demo) base> \n" {
+		t.Fatalf("unexpected prompt %q", got)
+	}
+}
+
 func TestRenderZshStartupIncludesBanner(t *testing.T) {
 	env := &resolver.Environment{
 		Name: "dev",
