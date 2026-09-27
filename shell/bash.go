@@ -109,10 +109,11 @@ func (bashRunner) RunPlan(env *resolver.Environment, args []string, dir string) 
 	return scriptPlan(env, dir, "run.sh", script, []string{"bash", "--noprofile", "--norc"}, args[1:]), nil
 }
 
-// re-applied from PROMPT_COMMAND since prompts like starship rebuild PS1 before every prompt
+// re-applied from PROMPT_COMMAND since prompts like starship rebuild PS1 before every prompt;
+// matched anywhere so a venv that prepends its own tag doesn't get a second prefix
 const bashPromptHook = `__aliasctl_prompt() {
   case "$PS1" in
-    '(aliasctl:${ALIASCTL_ENV}) '*) ;;
+    *'(aliasctl:${ALIASCTL_ENV}) '*) ;;
     *) PS1='(aliasctl:${ALIASCTL_ENV}) '"$PS1" ;;
   esac
 }

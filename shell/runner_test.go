@@ -234,6 +234,30 @@ func TestInteractiveRCReappliesPrefixAfterPromptCommand(t *testing.T) {
 	}
 }
 
+func TestInteractiveRCKeepsSinglePrefixAfterVenv(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+
+	home := t.TempDir()
+
+	writeHomeFile(t, home, ".bashrc", "PS1='base> '\n")
+
+	// venv activate prepends its tag the same way
+	got := runInteractive(
+		t,
+		home,
+		&resolver.Environment{Name: "demo"},
+		`PS1="(venv) $PS1"; eval "$PROMPT_COMMAND"; eval "$PROMPT_COMMAND"; echo "$PS1"`,
+	)
+
+	expected := "(venv) (aliasctl:${ALIASCTL_ENV}) base> \n"
+
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
 func TestInteractiveRCFallsBackToBashProfile(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not available")

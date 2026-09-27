@@ -90,10 +90,10 @@ func renderZshStartup(env *resolver.Environment, configPath, dir, userDir string
 		zshrc.WriteString(RenderBanner(env, configPath))
 	}
 
-	// precmd re-adds the prefix for prompts that rebuild PROMPT each time
+	// precmd re-adds the prefix for prompts that rebuild PROMPT each time, unless a venv moved it off the front
 	fmt.Fprintf(
 		&zshrc,
-		"__aliasctl_prompt() {\n  [[ \"$PROMPT\" == %s* ]] || PROMPT=%s\"$PROMPT\"\n}\n",
+		"__aliasctl_prompt() {\n  [[ \"$PROMPT\" == *%s* ]] || PROMPT=%s\"$PROMPT\"\n}\n",
 		prefix,
 		prefix,
 	)
