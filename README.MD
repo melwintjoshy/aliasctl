@@ -4,6 +4,7 @@ A lightweight CLI for creating temporary, project-scoped shell environments from
 
 AliasCtl lets you define variables, aliases, and shell functions in `aliasctl.yaml`, then launch a temporary Bash, Zsh or Fish shell without modifying your parent shell.
 
+[Watch the demo](https://lnkd.in/p/g6XT6udj)
 ## Installation
 
 ### Release binaries
